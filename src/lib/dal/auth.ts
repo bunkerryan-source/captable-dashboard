@@ -49,29 +49,16 @@ export async function inviteUser(
   displayName?: string
 ) {
   const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
 
-  if (!session?.access_token) {
-    throw new Error("Not authenticated");
+  const { data, error } = await supabase.functions.invoke("invite-user", {
+    body: { email, role, displayName },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to invite user");
   }
 
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/invite-user`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      },
-      body: JSON.stringify({ email, role, displayName }),
-    }
-  );
-
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err.error || "Failed to invite user");
+  if (data?.error) {
+    throw new Error(data.error);
   }
 }
