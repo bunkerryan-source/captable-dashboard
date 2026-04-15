@@ -55,7 +55,13 @@ export async function inviteUser(
   });
 
   if (error) {
-    throw new Error(error.message || "Failed to invite user");
+    // FunctionsHttpError stores the parsed response body in .context
+    const ctx = (error as { context?: unknown }).context;
+    const detail =
+      typeof ctx === "object" && ctx !== null && "error" in ctx
+        ? (ctx as { error: string }).error
+        : null;
+    throw new Error(detail || error.message || "Failed to invite user");
   }
 
   if (data?.error) {

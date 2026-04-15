@@ -37,23 +37,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = createClient();
 
     // Get initial session
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
-        const { data } = await supabase
-          .from("user_profiles")
-          .select("role, display_name")
-          .eq("id", user.id)
-          .single();
-        setState({
-          user,
-          role: (data?.role as UserRole) ?? "editor",
-          displayName: data?.display_name ?? user.email ?? null,
-          loading: false,
-        });
-      } else {
+    supabase.auth
+      .getUser()
+      .then(async ({ data: { user } }) => {
+        if (user) {
+          const { data } = await supabase
+            .from("user_profiles")
+            .select("role, display_name")
+            .eq("id", user.id)
+            .single();
+          setState({
+            user,
+            role: (data?.role as UserRole) ?? "editor",
+            displayName: data?.display_name ?? user.email ?? null,
+            loading: false,
+          });
+        } else {
+          setState({
+            user: null,
+            role: null,
+            displayName: null,
+            loading: false,
+          });
+        }
+      })
+      .catch(() => {
+        // Clear stale auth state so the app doesn't hang on the spinner
         setState({ user: null, role: null, displayName: null, loading: false });
-      }
-    });
+      });
 
     // Listen for auth state changes (login, logout, token refresh)
     const {
