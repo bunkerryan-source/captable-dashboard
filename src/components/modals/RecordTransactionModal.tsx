@@ -1,0 +1,213 @@
+"use client";
+
+import { useState } from "react";
+import { ModalShell } from "./ModalShell";
+import { PillSelector } from "@/components/ui/PillSelector";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { FileUploadZone } from "@/components/ui/FileUploadZone";
+import { Button } from "@/components/ui/Button";
+import { GiftFields } from "./transaction-fields/GiftFields";
+import { SaleFields } from "./transaction-fields/SaleFields";
+import { RedemptionFields } from "./transaction-fields/RedemptionFields";
+import { IssuanceFields } from "./transaction-fields/IssuanceFields";
+import { EstateTransferFields } from "./transaction-fields/EstateTransferFields";
+import { CorrectionFields } from "./transaction-fields/CorrectionFields";
+import { useModal } from "@/hooks/useModal";
+import { useSelectedEntity } from "@/hooks/useSelectedEntity";
+import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
+
+type TxType = "gift" | "sale" | "redemption" | "issuance" | "estate_transfer" | "correction";
+
+const TX_TYPE_OPTIONS: { value: TxType; label: string }[] = [
+  { value: "gift", label: "Gift" },
+  { value: "sale", label: "Sale" },
+  { value: "redemption", label: "Redemption" },
+  { value: "issuance", label: "New Issuance" },
+  { value: "estate_transfer", label: "Estate Transfer" },
+  { value: "correction", label: "Correction" },
+];
+
+export function RecordTransactionModal() {
+  const { isOpen, close } = useModal("recordTransaction");
+  const { entity, holdersWithHoldings } = useSelectedEntity();
+  const { holders } = useDashboard();
+  const dispatch = useDashboardDispatch();
+
+  const [txType, setTxType] = useState<TxType>("gift");
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
+  const [description, setDescription] = useState("");
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+
+  if (!entity) return null;
+
+  // Build holder options from the entity's current holders
+  const entityHolderIds = [...new Set(holdersWithHoldings.map((h) => h.holder.id))];
+  const holderOptions = entityHolderIds
+    .map((id) => {
+      const holder = holders.find((h) => h.id === id);
+      return holder ? { value: holder.id, label: holder.name } : null;
+    })
+    .filter((h): h is { value: string; label: string } => h !== null)
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  function handleFieldChange(field: string, value: string) {
+    setFieldValues((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleSubmit() {
+    if (!description.trim()) return;
+
+    const transaction = {
+      id: `tx-${Date.now()}`,
+      entityId: entity!.id,
+      transactionType: txType,
+      effectiveDate,
+      description: description.trim(),
+      metadata: { ...fieldValues },
+      createdAt: new Date().toISOString(),
+      createdBy: "Ryan Bunker",
+      attachments: [],
+    };
+
+    dispatch({
+      type: "RECORD_TRANSACTION",
+      transaction,
+      holdingsUpdates: [],
+    });
+
+    resetForm();
+    close();
+  }
+
+  function resetForm() {
+    setTxType("gift");
+    setEffectiveDate(new Date().toISOString().split("T")[0]);
+    setDescription("");
+    setFieldValues({});
+  }
+
+  function handleClose() {
+    resetForm();
+    close();
+  }
+
+  return (
+    <ModalShell
+      open={isOpen}
+      onClose={handleClose}
+      title="Record transaction"
+      footer={
+        <>
+          <Button variant="secondary" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button variant="secondary" onClick={handleSubmit}>
+            Save as Draft
+          </Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={!description.trim()}>
+            Record Transaction
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {/* Entity badge */}
+        <div className="text-xs text-text-secondary bg-surface px-2.5 py-1 rounded-lg inline-block">
+          {entity.name}
+        </div>
+
+        {/* Transaction type */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-text-secondary uppercase tracking-[0.03em]">
+            Transaction Type
+          </label>
+          <PillSelector
+            options={TX_TYPE_OPTIONS}
+            value={txType}
+            onChange={(v) => {
+              setTxType(v);
+              setFieldValues({});
+            }}
+          />
+        </div>
+
+        {/* Effective date */}
+        <Input
+          label="Effective Date"
+          type="date"
+          value={effectiveDate}
+          onChange={(e) => setEffectiveDate(e.target.value)}
+        />
+
+        {/* Type-specific fields */}
+        {txType === "gift" && (
+          <GiftFields
+            holders={holderOptions}
+            equityClasses={entity.equityClasses}
+            values={fieldValues}
+            onChange={handleFieldChange}
+          />
+        )}
+        {txType === "sale" && (
+          <SaleFields
+            holders={holderOptions}
+            equityClasses={entity.equityClasses}
+            values={fieldValues}
+            onChange={handleFieldChange}
+          />
+        )}
+        {txType === "redemption" && (
+          <RedemptionFields
+            holders={holderOptions}
+            equityClasses={entity.equityClasses}
+            values={fieldValues}
+            onChange={handleFieldChange}
+          />
+        )}
+        {txType === "issuance" && (
+          <IssuanceFields
+            holders={holderOptions}
+            equityClasses={entity.equityClasses}
+            values={fieldValues}
+            onChange={handleFieldChange}
+          />
+        )}
+        {txType === "estate_transfer" && (
+          <EstateTransferFields
+            holders={holderOptions}
+            equityClasses={entity.equityClasses}
+            values={fieldValues}
+            onChange={handleFieldChange}
+          />
+        )}
+        {txType === "correction" && (
+          <CorrectionFields
+            holders={holderOptions}
+            equityClasses={entity.equityClasses}
+            values={fieldValues}
+            onChange={handleFieldChange}
+          />
+        )}
+
+        {/* Divider */}
+        <div className="border-t border-border pt-4 mt-5">
+          <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-[0.05em]">
+            Notes & Attachments
+          </span>
+        </div>
+
+        {/* Description */}
+        <Textarea
+          label="Description"
+          placeholder="Describe what happened and why. This becomes the log entry."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+
+        {/* File upload */}
+        <FileUploadZone />
+      </div>
+    </ModalShell>
+  );
+}

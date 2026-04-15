@@ -1,0 +1,224 @@
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #1a1a1a; background: #fff; }
+.dash { padding: 1.5rem; position: relative; overflow: hidden; max-width: 960px; margin: 0 auto; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.entity-select { font-size: 15px; font-weight: 500; padding: 8px 14px; border: 1px solid #d0d0d0; border-radius: 8px; background: #fff; color: #1a1a1a; min-width: 260px; cursor: pointer; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { font-size: 13px; padding: 7px 14px; border: 1px solid #d0d0d0; border-radius: 8px; background: transparent; color: #1a1a1a; cursor: pointer; white-space: nowrap; font-family: inherit; }
+.btn:hover { background: #f5f5f3; }
+.btn-primary { background: #534AB7; color: #fff; border-color: #534AB7; }
+.btn-primary:hover { background: #3C3489; }
+.meta-row { display: flex; gap: 16px; margin-bottom: 1rem; font-size: 13px; color: #777; flex-wrap: wrap; }
+.meta-row span { display: flex; align-items: center; gap: 4px; }
+.meta-row strong { color: #1a1a1a; }
+.table-wrap { overflow-x: auto; border: 1px solid #e5e5e2; border-radius: 10px; margin-bottom: 1rem; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 580px; }
+thead { background: #f8f8f6; }
+th { padding: 10px 14px; text-align: left; font-weight: 500; font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid #e5e5e2; white-space: nowrap; }
+th:not(:first-child) { text-align: right; }
+td { padding: 10px 14px; border-bottom: 1px solid #e5e5e2; }
+td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: none; }
+.holder-name { font-weight: 500; }
+.holder-type { font-size: 11px; color: #aaa; margin-top: 2px; }
+.total-row td { font-weight: 500; background: #f8f8f6; }
+.footer-bar { display: flex; align-items: center; justify-content: space-between; margin-top: 1rem; flex-wrap: wrap; gap: 8px; }
+.log-link { font-size: 13px; color: #534AB7; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 4px; }
+.log-link:hover { text-decoration: underline; }
+.export-group { display: flex; gap: 8px; }
+.overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.25); opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 10; }
+.overlay.open { opacity: 1; pointer-events: auto; }
+.panel { position: fixed; top: 0; right: -420px; width: 400px; max-width: 90vw; height: 100vh; background: #fff; border-left: 1px solid #e5e5e2; transition: right 0.25s ease; z-index: 11; display: flex; flex-direction: column; overflow: hidden; }
+.panel.open { right: 0; }
+.panel-header { padding: 16px 20px; border-bottom: 1px solid #e5e5e2; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.panel-header h3 { font-size: 16px; font-weight: 500; }
+.close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #888; padding: 4px; }
+.panel-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+.log-entry { padding: 12px 0; border-bottom: 1px solid #e5e5e2; }
+.log-entry:last-child { border-bottom: none; }
+.log-date { font-size: 12px; font-weight: 500; color: #888; margin-bottom: 4px; }
+.log-type { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-bottom: 4px; }
+.log-type-gift { background: #EEEDFE; color: #3C3489; }
+.log-type-sale { background: #E1F5EE; color: #085041; }
+.log-type-issuance { background: #E6F1FB; color: #0C447C; }
+.log-type-redemption { background: #FAEEDA; color: #633806; }
+.log-type-estate { background: #FBEAF0; color: #72243E; }
+.log-desc { font-size: 13px; color: #1a1a1a; line-height: 1.5; }
+.log-attach { font-size: 12px; color: #888; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+.badge-count { display: inline-flex; align-items: center; justify-content: center; background: #534AB7; color: #fff; font-size: 11px; font-weight: 500; width: 20px; height: 20px; border-radius: 50%; margin-left: 4px; }
+.snapshot-tag { font-size: 11px; background: #E6F1FB; color: #0C447C; padding: 2px 8px; border-radius: 8px; margin-left: 0; margin-top: 6px; cursor: pointer; display: inline-block; }
+.snapshot-tag:hover { background: #B5D4F4; }
+</style>
+
+<div class="dash">
+  <div class="top-bar">
+    <select class="entity-select" id="entitySelect">
+      <option value="abp-fund-iii">ABP Real Estate Fund III, LP</option>
+      <option value="abp-dev-llc">ABP Development Holdings, LLC</option>
+      <option value="c3-holdings">C3 Financial Holdings, Inc.</option>
+      <option value="abp-opp-ii">ABP Opportunity Fund II, LP</option>
+    </select>
+    <div class="actions">
+      <button class="btn btn-primary" id="recordBtn">+ Record transaction</button>
+      <button class="btn" id="addHolderBtn">+ Add holder</button>
+    </div>
+  </div>
+
+  <div class="meta-row" id="metaRow">
+    <span>Entity type: <strong>Limited partnership</strong></span>
+    <span>Equity model: <strong>Percentage interests</strong></span>
+    <span>Last updated: <strong>Mar 28, 2026</strong></span>
+    <span>Holders: <strong>8</strong></span>
+  </div>
+
+  <div class="table-wrap">
+    <table id="capTable">
+      <thead id="tableHead"></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer-bar">
+    <a class="log-link" id="openLog">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h8"/></svg>
+      Change log <span class="badge-count" id="logCount">6</span>
+    </a>
+    <div class="export-group">
+      <button class="btn" id="exportCurrent">Export current</button>
+      <button class="btn" id="exportHistorical">Export as of date...</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="panel" id="panel">
+  <div class="panel-header">
+    <h3>Change log</h3>
+    <button class="close-btn" id="closePanel">&times;</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<script>
+const entities = {
+  'abp-fund-iii': {
+    type: 'Limited partnership', model: 'Percentage interests', updated: 'Mar 28, 2026',
+    columns: ['LP interest (%)', 'GP interest (%)', 'Capital committed ($)'],
+    holders: [
+      { name: 'ABP Capital GP, LLC', type: 'General partner', values: ['\u2014', '2.00%', '$500,000'] },
+      { name: 'Bunker Family Trust', type: 'Limited partner', values: ['18.50%', '\u2014', '$4,625,000'] },
+      { name: 'Peterson Holdings, LLC', type: 'Limited partner', values: ['15.00%', '\u2014', '$3,750,000'] },
+      { name: 'Chen Investment Partners', type: 'Limited partner', values: ['12.00%', '\u2014', '$3,000,000'] },
+      { name: 'Martinez Living Trust', type: 'Limited partner', values: ['10.00%', '\u2014', '$2,500,000'] },
+      { name: 'Whitfield Capital, LP', type: 'Limited partner', values: ['9.50%', '\u2014', '$2,375,000'] },
+      { name: 'Nakamura Family Office', type: 'Limited partner', values: ['8.00%', '\u2014', '$2,000,000'] },
+      { name: 'Sullivan Irrevocable Trust', type: 'Limited partner', values: ['25.00%', '\u2014', '$6,250,000'] },
+    ],
+    totals: ['98.00%', '2.00%', '$25,000,000'],
+    logs: [
+      { date: 'Mar 28, 2026', type: 'gift', label: 'Gift', desc: 'Sullivan Irrevocable Trust transferred 5.00% LP interest to Martinez Living Trust as part of estate planning restructuring.', attach: 'Gift_Letter_Sullivan_2026-03-28.pdf' },
+      { date: 'Feb 15, 2026', type: 'issuance', label: 'New issuance', desc: 'Nakamura Family Office admitted as new LP with $2,000,000 capital commitment (8.00% LP interest). Existing interests diluted proportionally.', attach: 'Subscription_Agreement_Nakamura.pdf' },
+      { date: 'Jan 10, 2026', type: 'sale', label: 'Sale', desc: "Whitfield Capital purchased 4.50% LP interest from Peterson Holdings at $1,125,000 (arm's length). ROFR waived by GP.", attach: 'Transfer_Agreement_Whitfield_Peterson.pdf' },
+      { date: 'Nov 5, 2025', type: 'redemption', label: 'Redemption', desc: 'Partial redemption of 3.00% LP interest held by Chen Investment Partners. Redemption price: $780,000.', attach: null },
+      { date: 'Sep 20, 2025', type: 'estate', label: 'Estate transfer', desc: 'Estate of Robert Sullivan transferred 25.00% LP interest to Sullivan Irrevocable Trust per probate order.', attach: 'Probate_Order_Sullivan.pdf' },
+      { date: 'Jun 1, 2025', type: 'issuance', label: 'New issuance', desc: 'Initial closing. Fund formed with 5 founding LPs and GP.', attach: 'LPA_Executed_2025-06-01.pdf' },
+    ]
+  },
+  'abp-dev-llc': {
+    type: 'Limited liability company', model: 'Units (share-based)', updated: 'Apr 2, 2026',
+    columns: ['Class A units', 'Class B units', 'Voting (%)'],
+    holders: [
+      { name: 'ABP Capital, LLC', type: 'Managing member', values: ['5,000', '\u2014', '50.00%'] },
+      { name: 'Bunker Family Trust', type: 'Member', values: ['2,000', '1,500', '20.00%'] },
+      { name: 'Peterson Holdings, LLC', type: 'Member', values: ['1,500', '1,000', '15.00%'] },
+      { name: 'Sierra Vista Partners', type: 'Member', values: ['1,000', '500', '10.00%'] },
+      { name: 'Coastal Ventures, LLC', type: 'Member', values: ['500', '500', '5.00%'] },
+    ],
+    totals: ['10,000', '3,500', '100.00%'],
+    logs: [
+      { date: 'Apr 2, 2026', type: 'sale', label: 'Sale', desc: 'Coastal Ventures acquired 500 Class A units and 500 Class B units from Sierra Vista at $425,000.', attach: 'Unit_Purchase_Agreement_Coastal.pdf' },
+      { date: 'Jan 20, 2026', type: 'issuance', label: 'New issuance', desc: 'Authorized and issued additional 1,000 Class B units to Bunker Family Trust for $500,000 capital contribution.', attach: null },
+      { date: 'Aug 15, 2025', type: 'issuance', label: 'New issuance', desc: 'Entity formed. Initial unit issuance to founding members.', attach: 'OA_Executed_2025-08-15.pdf' },
+    ]
+  },
+  'c3-holdings': {
+    type: 'C Corporation', model: 'Shares (par value)', updated: 'Mar 10, 2026',
+    columns: ['Common shares', 'Preferred A shares', 'Ownership (%)'],
+    holders: [
+      { name: 'ABP Capital, LLC', type: 'Majority shareholder', values: ['600,000', '200,000', '62.50%'] },
+      { name: 'Bunker Family Trust', type: 'Shareholder', values: ['200,000', '\u2014', '15.63%'] },
+      { name: 'Peterson Holdings, LLC', type: 'Shareholder', values: ['150,000', '50,000', '15.63%'] },
+      { name: 'Management Stock Plan', type: 'ESOP', values: ['80,000', '\u2014', '6.25%'] },
+    ],
+    totals: ['1,030,000', '250,000', '100.00%'],
+    logs: [
+      { date: 'Mar 10, 2026', type: 'issuance', label: 'New issuance', desc: 'Board authorized issuance of 30,000 shares to Management Stock Plan under 2026 equity incentive plan.', attach: 'Board_Resolution_ESOP_2026.pdf' },
+      { date: 'Oct 1, 2025', type: 'issuance', label: 'New issuance', desc: 'Preferred A shares issued to ABP Capital and Peterson Holdings in Series A financing round.', attach: null },
+    ]
+  },
+  'abp-opp-ii': {
+    type: 'Limited partnership', model: 'Percentage interests', updated: 'Feb 28, 2026',
+    columns: ['LP interest (%)', 'GP interest (%)', 'Capital committed ($)'],
+    holders: [
+      { name: 'ABP Opportunity GP, LLC', type: 'General partner', values: ['\u2014', '1.50%', '$225,000'] },
+      { name: 'Bunker Family Trust', type: 'Limited partner', values: ['22.00%', '\u2014', '$3,300,000'] },
+      { name: 'Pacific Rim Investors', type: 'Limited partner', values: ['18.00%', '\u2014', '$2,700,000'] },
+      { name: 'Davis Charitable Trust', type: 'Limited partner', values: ['14.50%', '\u2014', '$2,175,000'] },
+      { name: 'Landmark Partners, LLC', type: 'Limited partner', values: ['12.00%', '\u2014', '$1,800,000'] },
+      { name: 'Greenfield Family LP', type: 'Limited partner', values: ['10.00%', '\u2014', '$1,500,000'] },
+      { name: 'Apex Capital Group', type: 'Limited partner', values: ['8.00%', '\u2014', '$1,200,000'] },
+      { name: 'Redwood Ventures', type: 'Limited partner', values: ['7.00%', '\u2014', '$1,050,000'] },
+      { name: 'Thompson Living Trust', type: 'Limited partner', values: ['7.00%', '\u2014', '$1,050,000'] },
+    ],
+    totals: ['98.50%', '1.50%', '$15,000,000'],
+    logs: [
+      { date: 'Feb 28, 2026', type: 'gift', label: 'Gift', desc: 'Greenfield Family LP gifted 2.00% LP interest to Davis Charitable Trust.', attach: 'Gift_Deed_Greenfield_Davis.pdf' },
+      { date: 'Dec 10, 2025', type: 'estate', label: 'Estate transfer', desc: 'Thompson estate transferred interest to Thompson Living Trust per trust succession documents.', attach: 'Trust_Succession_Thompson.pdf' },
+      { date: 'Jul 15, 2025', type: 'issuance', label: 'New issuance', desc: 'Fund II initial closing with 8 LPs and GP.', attach: 'LPA_Fund_II_Executed.pdf' },
+    ]
+  }
+};
+
+const typeColors = { gift: 'log-type-gift', sale: 'log-type-sale', issuance: 'log-type-issuance', redemption: 'log-type-redemption', estate: 'log-type-estate' };
+
+function render(id) {
+  const e = entities[id];
+  document.getElementById('metaRow').innerHTML = '<span>Entity type: <strong>' + e.type + '</strong></span><span>Equity model: <strong>' + e.model + '</strong></span><span>Last updated: <strong>' + e.updated + '</strong></span><span>Holders: <strong>' + e.holders.length + '</strong></span>';
+
+  var head = '<tr><th>Equity holder</th>';
+  e.columns.forEach(function(c) { head += '<th>' + c + '</th>'; });
+  head += '</tr>';
+  document.getElementById('tableHead').innerHTML = head;
+
+  var body = '';
+  e.holders.forEach(function(h) {
+    body += '<tr><td><div class="holder-name">' + h.name + '</div><div class="holder-type">' + h.type + '</div></td>';
+    h.values.forEach(function(v) { body += '<td>' + v + '</td>'; });
+    body += '</tr>';
+  });
+  body += '<tr class="total-row"><td><strong>Total</strong></td>';
+  e.totals.forEach(function(t) { body += '<td>' + t + '</td>'; });
+  body += '</tr>';
+  document.getElementById('tableBody').innerHTML = body;
+
+  document.getElementById('logCount').textContent = e.logs.length;
+
+  var logs = '';
+  e.logs.forEach(function(l) {
+    logs += '<div class="log-entry"><div class="log-date">' + l.date + '</div><span class="log-type ' + typeColors[l.type] + '">' + l.label + '</span><div class="log-desc">' + l.desc + '</div>';
+    if (l.attach) logs += '<div class="log-attach"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 10v3a1 1 0 01-1 1H3a1 1 0 01-1-1v-3M8 2v9M4 6l4-4 4 4"/></svg>' + l.attach + '</div>';
+    logs += '<span class="snapshot-tag">View cap table as of this date</span></div>';
+  });
+  document.getElementById('panelBody').innerHTML = logs;
+}
+
+render('abp-fund-iii');
+document.getElementById('entitySelect').addEventListener('change', function() { render(this.value); });
+
+var panel = document.getElementById('panel');
+var overlay = document.getElementById('overlay');
+document.getElementById('openLog').addEventListener('click', function() { panel.classList.add('open'); overlay.classList.add('open'); });
+document.getElementById('closePanel').addEventListener('click', function() { panel.classList.remove('open'); overlay.classList.remove('open'); });
+overlay.addEventListener('click', function() { panel.classList.remove('open'); overlay.classList.remove('open'); });
+</script>
