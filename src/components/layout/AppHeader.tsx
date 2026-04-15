@@ -37,7 +37,11 @@ export function AppHeader() {
 
   async function handleSignOut() {
     setMenuOpen(false);
-    await signOut();
+    try {
+      await signOut();
+    } catch {
+      // Always redirect even if signOut fails
+    }
     router.push("/login");
   }
 
