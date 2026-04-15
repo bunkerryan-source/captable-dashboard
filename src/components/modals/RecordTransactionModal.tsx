@@ -74,16 +74,17 @@ export function RecordTransactionModal() {
     }
   }, [isOpen, editingTransactionId, transactions]);
 
-  // Auto-select equity class when there's only one active class.
-  // Without this, the <select> shows the option visually but onChange
-  // never fires (user doesn't interact), so equityClass stays undefined
-  // and no holdings are created.
+  // Active equity classes for auto-selection
   const activeClasses = entity?.equityClasses.filter((c) => c.isActive) ?? [];
+
+  // Auto-select equity class when there's only one active class.
+  // Must re-run when txType changes (PillSelector onChange clears fieldValues)
+  // and when the modal opens.
   useEffect(() => {
     if (isOpen && activeClasses.length === 1 && !fieldValues.equityClass) {
       setFieldValues((prev) => ({ ...prev, equityClass: activeClasses[0].id }));
     }
-  }, [isOpen, activeClasses.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, activeClasses.length, txType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!entity) return null;
 
