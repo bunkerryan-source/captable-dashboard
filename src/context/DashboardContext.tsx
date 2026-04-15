@@ -35,6 +35,7 @@ export interface DashboardState {
     | "entitySetup"
     | "entitySettings"
     | null;
+  editingTransactionId: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -61,7 +62,10 @@ export type DashboardAction =
       type: "RECORD_TRANSACTION";
       transaction: TransactionWithAttachments;
       holdingsUpdates: Holding[];
-    };
+    }
+  | { type: "SET_EDITING_TRANSACTION"; transactionId: string | null }
+  | { type: "UPDATE_TRANSACTION"; transaction: TransactionWithAttachments }
+  | { type: "DELETE_TRANSACTION"; transactionId: string };
 
 // ── Reducer ──
 
@@ -134,6 +138,25 @@ function dashboardReducer(
       };
     }
 
+    case "SET_EDITING_TRANSACTION":
+      return { ...state, editingTransactionId: action.transactionId };
+
+    case "UPDATE_TRANSACTION":
+      return {
+        ...state,
+        transactions: state.transactions.map((t) =>
+          t.id === action.transaction.id ? action.transaction : t
+        ),
+      };
+
+    case "DELETE_TRANSACTION":
+      return {
+        ...state,
+        transactions: state.transactions.filter(
+          (t) => t.id !== action.transactionId
+        ),
+      };
+
     default:
       return state;
   }
@@ -148,6 +171,7 @@ const initialState: DashboardState = {
   transactions: [],
   changeLogOpen: false,
   activeModal: null,
+  editingTransactionId: null,
   loading: true,
   error: null,
 };

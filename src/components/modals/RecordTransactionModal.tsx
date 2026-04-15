@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ModalShell } from "./ModalShell";
 import { PillSelector } from "@/components/ui/PillSelector";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { FileUploadZone } from "@/components/ui/FileUploadZone";
 import { Button } from "@/components/ui/Button";
@@ -17,7 +18,13 @@ import { useModal } from "@/hooks/useModal";
 import { useSelectedEntity } from "@/hooks/useSelectedEntity";
 import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
 import { useAuth } from "@/context/AuthContext";
-import { recordTransaction as dalRecordTransaction } from "@/lib/dal";
+import {
+  recordTransaction as dalRecordTransaction,
+  updateTransaction as dalUpdateTransaction,
+  addHolder as dalAddHolder,
+} from "@/lib/dal";
+import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
+import type { Holder } from "@/data/types";
 
 type TxType = "gift" | "sale" | "redemption" | "issuance" | "estate_transfer" | "correction";
 
@@ -32,32 +39,92 @@ const TX_TYPE_OPTIONS: { value: TxType; label: string }[] = [
 
 export function RecordTransactionModal() {
   const { isOpen, close } = useModal("recordTransaction");
-  const { entity, holdersWithHoldings } = useSelectedEntity();
-  const { holders } = useDashboard();
+  const { entity } = useSelectedEntity();
+  const { holders, transactions, editingTransactionId } = useDashboard();
   const dispatch = useDashboardDispatch();
   const { displayName } = useAuth();
 
   const [txType, setTxType] = useState<TxType>("gift");
-  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
+  const [effectiveDate, setEffectiveDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
   const [description, setDescription] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Inline "add holder" state
+  const [addingHolderForField, setAddingHolderForField] = useState<string | null>(null);
+  const [newHolderName, setNewHolderName] = useState("");
+  const [newHolderType, setNewHolderType] = useState("individual");
+  const [addingHolder, setAddingHolder] = useState(false);
+
+  const isEditing = editingTransactionId !== null;
+
+  // Pre-populate form when editing
+  useEffect(() => {
+    if (isOpen && editingTransactionId) {
+      const tx = transactions.find((t) => t.id === editingTransactionId);
+      if (tx) {
+        setTxType(tx.transactionType as TxType);
+        setEffectiveDate(tx.effectiveDate);
+        setDescription(tx.description);
+        setFieldValues({ ...(tx.metadata as Record<string, string>) });
+      }
+    }
+  }, [isOpen, editingTransactionId, transactions]);
+
   if (!entity) return null;
 
-  // Build holder options from the entity's current holders
-  const entityHolderIds = [...new Set(holdersWithHoldings.map((h) => h.holder.id))];
-  const holderOptions = entityHolderIds
-    .map((id) => {
-      const holder = holders.find((h) => h.id === id);
-      return holder ? { value: holder.id, label: holder.name } : null;
-    })
-    .filter((h): h is { value: string; label: string } => h !== null)
+  // All holders available for selection (not just entity holders)
+  const holderOptions = holders
+    .map((h) => ({ value: h.id, label: h.name }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
   function handleFieldChange(field: string, value: string) {
+    if (value === "__new__") {
+      setAddingHolderForField(field);
+      setNewHolderName("");
+      setNewHolderType("individual");
+      return;
+    }
     setFieldValues((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function handleAddHolder() {
+    if (!newHolderName.trim() || !addingHolderForField) return;
+    setAddingHolder(true);
+
+    try {
+      const holder = await dalAddHolder({
+        name: newHolderName.trim(),
+        holderType: newHolderType as Holder["holderType"],
+        taxIdLastFour: null,
+        contactEmail: null,
+        notes: null,
+      });
+      dispatch({ type: "ADD_HOLDER", holder });
+      // Auto-select the new holder in the field that triggered the flow
+      setFieldValues((prev) => ({
+        ...prev,
+        [addingHolderForField!]: holder.id,
+      }));
+      setAddingHolderForField(null);
+      setNewHolderName("");
+      setNewHolderType("individual");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to add holder"
+      );
+    } finally {
+      setAddingHolder(false);
+    }
+  }
+
+  function cancelAddHolder() {
+    setAddingHolderForField(null);
+    setNewHolderName("");
+    setNewHolderType("individual");
   }
 
   async function handleSubmit() {
@@ -66,28 +133,41 @@ export function RecordTransactionModal() {
     setError(null);
 
     try {
-      const result = await dalRecordTransaction(
-        {
-          entityId: entity!.id,
+      if (isEditing && editingTransactionId) {
+        // Update existing transaction
+        const updated = await dalUpdateTransaction(editingTransactionId, {
           transactionType: txType,
           effectiveDate,
           description: description.trim(),
           metadata: { ...fieldValues },
-          createdBy: displayName ?? "Unknown",
-        },
-        []
-      );
-
-      dispatch({
-        type: "RECORD_TRANSACTION",
-        transaction: result.transaction,
-        holdingsUpdates: result.holdings,
-      });
+        });
+        dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
+      } else {
+        // Create new transaction
+        const result = await dalRecordTransaction(
+          {
+            entityId: entity!.id,
+            transactionType: txType,
+            effectiveDate,
+            description: description.trim(),
+            metadata: { ...fieldValues },
+            createdBy: displayName ?? "Unknown",
+          },
+          []
+        );
+        dispatch({
+          type: "RECORD_TRANSACTION",
+          transaction: result.transaction,
+          holdingsUpdates: result.holdings,
+        });
+      }
 
       resetForm();
       close();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to record transaction");
+      setError(
+        err instanceof Error ? err.message : "Failed to save transaction"
+      );
     } finally {
       setSubmitting(false);
     }
@@ -99,6 +179,12 @@ export function RecordTransactionModal() {
     setDescription("");
     setFieldValues({});
     setError(null);
+    setAddingHolderForField(null);
+    setNewHolderName("");
+    setNewHolderType("individual");
+    if (isEditing) {
+      dispatch({ type: "SET_EDITING_TRANSACTION", transactionId: null });
+    }
   }
 
   function handleClose() {
@@ -106,25 +192,42 @@ export function RecordTransactionModal() {
     close();
   }
 
+  const fieldComponentProps = {
+    holders: holderOptions,
+    equityClasses: entity.equityClasses,
+    values: fieldValues,
+    onChange: handleFieldChange,
+  };
+
   return (
     <ModalShell
       open={isOpen}
       onClose={handleClose}
-      title="Record transaction"
+      title={isEditing ? "Edit transaction" : "Record transaction"}
       footer={
         <>
           <Button variant="secondary" onClick={handleClose}>
             Cancel
           </Button>
-          <Button variant="secondary" onClick={handleSubmit} disabled={submitting}>
-            Save as Draft
-          </Button>
+          {!isEditing && (
+            <Button
+              variant="secondary"
+              onClick={handleSubmit}
+              disabled={submitting}
+            >
+              Save as Draft
+            </Button>
+          )}
           <Button
             variant="primary"
             onClick={handleSubmit}
             disabled={!description.trim() || submitting}
           >
-            {submitting ? "Recording\u2026" : "Record Transaction"}
+            {submitting
+              ? "Saving\u2026"
+              : isEditing
+                ? "Save Changes"
+                : "Record Transaction"}
           </Button>
         </>
       }
@@ -159,53 +262,55 @@ export function RecordTransactionModal() {
         />
 
         {/* Type-specific fields */}
-        {txType === "gift" && (
-          <GiftFields
-            holders={holderOptions}
-            equityClasses={entity.equityClasses}
-            values={fieldValues}
-            onChange={handleFieldChange}
-          />
-        )}
-        {txType === "sale" && (
-          <SaleFields
-            holders={holderOptions}
-            equityClasses={entity.equityClasses}
-            values={fieldValues}
-            onChange={handleFieldChange}
-          />
-        )}
-        {txType === "redemption" && (
-          <RedemptionFields
-            holders={holderOptions}
-            equityClasses={entity.equityClasses}
-            values={fieldValues}
-            onChange={handleFieldChange}
-          />
-        )}
-        {txType === "issuance" && (
-          <IssuanceFields
-            holders={holderOptions}
-            equityClasses={entity.equityClasses}
-            values={fieldValues}
-            onChange={handleFieldChange}
-          />
-        )}
+        {txType === "gift" && <GiftFields {...fieldComponentProps} />}
+        {txType === "sale" && <SaleFields {...fieldComponentProps} />}
+        {txType === "redemption" && <RedemptionFields {...fieldComponentProps} />}
+        {txType === "issuance" && <IssuanceFields {...fieldComponentProps} />}
         {txType === "estate_transfer" && (
-          <EstateTransferFields
-            holders={holderOptions}
-            equityClasses={entity.equityClasses}
-            values={fieldValues}
-            onChange={handleFieldChange}
-          />
+          <EstateTransferFields {...fieldComponentProps} />
         )}
-        {txType === "correction" && (
-          <CorrectionFields
-            holders={holderOptions}
-            equityClasses={entity.equityClasses}
-            values={fieldValues}
-            onChange={handleFieldChange}
-          />
+        {txType === "correction" && <CorrectionFields {...fieldComponentProps} />}
+
+        {/* Inline add-holder form */}
+        {addingHolderForField && (
+          <div className="border border-trust-blue/30 bg-trust-blue/[0.03] rounded-lg p-3 space-y-3">
+            <div className="text-[11px] font-medium text-trust-blue uppercase tracking-[0.05em]">
+              Add New Holder
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Holder Name"
+                placeholder="e.g., Bunker Family Trust"
+                value={newHolderName}
+                onChange={(e) => setNewHolderName(e.target.value)}
+              />
+              <Select
+                label="Holder Type"
+                options={HOLDER_TYPE_OPTIONS.map((o) => ({
+                  value: o.value,
+                  label: o.label,
+                }))}
+                value={newHolderType}
+                onChange={(e) => setNewHolderType(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="secondary"
+                onClick={cancelAddHolder}
+                disabled={addingHolder}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleAddHolder}
+                disabled={!newHolderName.trim() || addingHolder}
+              >
+                {addingHolder ? "Adding\u2026" : "Add Holder"}
+              </Button>
+            </div>
+          </div>
         )}
 
         {/* Divider */}

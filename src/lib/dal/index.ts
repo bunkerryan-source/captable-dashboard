@@ -4,6 +4,8 @@ export { fetchHoldings, upsertHoldings } from "./holdings";
 export {
   fetchTransactionsWithAttachments,
   recordTransaction,
+  updateTransaction,
+  deleteTransaction,
 } from "./transactions";
 export {
   signIn,

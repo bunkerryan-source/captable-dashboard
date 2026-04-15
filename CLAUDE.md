@@ -108,9 +108,12 @@ src/
 
 - **Roles:** `admin` (full access + invite users), `editor` (full data access)
 - **Flow:** Email/password login. Admin invites users via Edge Function (`invite-user`).
-- **Edge Function:** `invite-user` (v4, `verify_jwt: false`) — decodes JWT from Authorization header, checks admin role via user_profiles, calls `auth.admin.inviteUserByEmail()`, auto-creates user_profiles entry.
-- **Client-side:** `inviteUser()` in DAL uses `supabase.functions.invoke()` (not raw fetch).
+- **Edge Function:** `invite-user` (v5, `verify_jwt: false`) — decodes JWT from Authorization header, checks admin role via user_profiles, calls `auth.admin.inviteUserByEmail()`, auto-creates user_profiles entry. Returns friendly 409 if user already invited.
+- **Client-side:** `inviteUser()` in DAL uses `supabase.functions.invoke()` (not raw fetch). Extracts actual error messages from `FunctionsHttpError.context` so the UI shows meaningful errors.
+- **Auth resilience:** `AuthContext` has `.catch()` on initial `getUser()` so stale/corrupt cookies cause a redirect to login instead of infinite spinner. Middleware copies cookie updates to redirect responses so expired sessions are properly cleared on the browser.
 - **Auth gating:** `(dashboard)/layout.tsx` is a client component that waits for `useAuth().loading` to be false before mounting `DashboardProvider`, preventing data fetches before the auth session is hydrated.
+- **Admin transaction management:** Admins can edit and delete transactions from the change log. Edit opens the RecordTransactionModal pre-populated with existing data. Delete shows an inline confirmation.
+- **Add Holder from transaction form:** When "+ Add new holder..." is selected in any holder dropdown within the Record Transaction modal, an inline mini-form appears (name + type). On submit, the new holder is created and auto-selected in the dropdown.
 
 ## Design System
 
@@ -140,12 +143,16 @@ src/
 ## Known Issues / TODO
 
 - **Edge Function `verify_jwt` is `false`** — disabled to work around gateway JWT rejection. The function handles auth internally (decodes JWT, checks admin role). Should investigate why the gateway rejects valid JWTs from `supabase.functions.invoke()` and re-enable.
+- **Supabase Site URL** — must be set to `https://cap-table-dashboard.vercel.app` in Supabase dashboard (Authentication > URL Configuration). If still set to `http://localhost:3000`, invite email links will point to localhost. Also add `https://cap-table-dashboard.vercel.app/auth/callback` to Redirect URLs.
 - **Mock data files still exist** — `src/data/mock-*.ts` can be deleted (no longer imported).
 - **Supabase email confirmation** — disabled manually in Supabase dashboard. If re-enabled, users will be blocked from logging in until they confirm email.
-- **Auth callback redirect URL** — `https://cap-table-dashboard.vercel.app/auth/callback` needs to be added to Supabase redirect URLs for invite email links to work on the production domain.
+- **Multi-class % of Total** — The "% of Total" column currently uses the first non-percentage equity class for its calculation. Entities with multiple non-percentage classes (e.g., Class A Shares + Class B Shares) need per-class percentage columns instead of a single aggregate column.
+- **Diluted vs. undiluted ownership** — Some entities have options or profits interests. The cap table will need two percentage columns: one for regular ownership (excluding options/profits interests) and one for fully diluted ownership (including options/profits interests). Requires a way to flag equity classes as dilutive instruments (options, profits interests) vs. base equity, then compute both percentages.
 
 ## Next Steps
 
-1. **Export functionality** — Wire up "Export current" and "Export as of date" buttons.
-2. **Historical snapshots** — "View cap table as of this date" in the change log.
-3. **File upload** — Wire FileUploadZone to Supabase Storage for transaction attachments.
+1. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
+2. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
+3. **Export functionality** — Wire up "Export current" and "Export as of date" buttons.
+4. **Historical snapshots** — "View cap table as of this date" in the change log.
+5. **File upload** — Wire FileUploadZone to Supabase Storage for transaction attachments.

@@ -16,11 +16,18 @@ export default function LoginPage() {
 
   // Check if this is first-time setup (no users exist)
   useEffect(() => {
-    const supabase = createClient();
-    supabase.rpc("has_users" as never).then(({ data }: { data: boolean | null }) => {
-      setIsSetup(data === false);
-      setCheckingUsers(false);
-    });
+    async function check() {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.rpc("has_users" as never) as { data: boolean | null };
+        setIsSetup(data === false);
+      } catch {
+        // If the RPC fails (stale cookies, network issue), fall through to login
+      } finally {
+        setCheckingUsers(false);
+      }
+    }
+    check();
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
