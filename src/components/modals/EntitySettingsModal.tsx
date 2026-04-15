@@ -11,6 +11,7 @@ import { useModal } from "@/hooks/useModal";
 import { useSelectedEntity } from "@/hooks/useSelectedEntity";
 import { useDashboardDispatch } from "@/context/DashboardContext";
 import { ENTITY_TYPE_OPTIONS, UNIT_TYPE_OPTIONS } from "@/lib/constants";
+import { updateEntity as dalUpdateEntity } from "@/lib/dal";
 import type { EntityType, EquityModel, UnitType } from "@/data/types";
 
 interface EquityClassRow {
@@ -32,6 +33,8 @@ export function EntitySettingsModal() {
   const [showCommittedCapital, setShowCommittedCapital] = useState(false);
   const [notes, setNotes] = useState("");
   const [equityClasses, setEquityClasses] = useState<EquityClassRow[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Populate form when entity changes or modal opens
   useEffect(() => {
@@ -50,6 +53,7 @@ export function EntitySettingsModal() {
           unitType: ec.unitType,
         }))
       );
+      setError(null);
     }
   }, [entity, isOpen]);
 
@@ -73,13 +77,13 @@ export function EntitySettingsModal() {
     setEquityClasses(equityClasses.filter((_, i) => i !== idx));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!name.trim() || equityClasses.some((ec) => !ec.name.trim())) return;
+    setSubmitting(true);
+    setError(null);
 
-    dispatch({
-      type: "UPDATE_ENTITY",
-      entity: {
-        ...entity!,
+    try {
+      const updated = await dalUpdateEntity(entity!.id, {
         name: name.trim(),
         entityType,
         equityModel,
@@ -87,7 +91,6 @@ export function EntitySettingsModal() {
         dateOfFormation: dateOfFormation || null,
         showCommittedCapital,
         notes: notes || null,
-        updatedAt: new Date().toISOString(),
         equityClasses: equityClasses.map((ec, idx) => ({
           id: ec.id,
           entityId: entity!.id,
@@ -96,8 +99,13 @@ export function EntitySettingsModal() {
           unitType: ec.unitType,
           isActive: true,
         })),
-      },
-    });
+      });
+      dispatch({ type: "UPDATE_ENTITY", entity: updated });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update entity");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -114,9 +122,9 @@ export function EntitySettingsModal() {
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={!name.trim() || equityClasses.some((ec) => !ec.name.trim())}
+            disabled={!name.trim() || equityClasses.some((ec) => !ec.name.trim()) || submitting}
           >
-            Save Changes
+            {submitting ? "Saving\u2026" : "Save Changes"}
           </Button>
         </>
       }
@@ -216,6 +224,12 @@ export function EntitySettingsModal() {
         >
           + Add equity class
         </button>
+
+        {error && (
+          <div className="text-[13px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            {error}
+          </div>
+        )}
       </div>
     </ModalShell>
   );

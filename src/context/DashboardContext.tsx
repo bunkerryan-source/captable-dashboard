@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useReducer,
+  useEffect,
   type ReactNode,
   type Dispatch,
 } from "react";
@@ -13,10 +14,12 @@ import type {
   Holding,
   TransactionWithAttachments,
 } from "@/data/types";
-import { mockEntities } from "@/data/mock-entities";
-import { mockHolders } from "@/data/mock-holders";
-import { mockHoldings } from "@/data/mock-holdings";
-import { mockTransactions } from "@/data/mock-transactions";
+import {
+  fetchEntitiesWithClasses,
+  fetchHolders,
+  fetchHoldings,
+  fetchTransactionsWithAttachments,
+} from "@/lib/dal";
 
 // ── State ──
 
@@ -32,11 +35,22 @@ export interface DashboardState {
     | "entitySetup"
     | "entitySettings"
     | null;
+  loading: boolean;
+  error: string | null;
 }
 
 // ── Actions ──
 
 export type DashboardAction =
+  | {
+      type: "INIT_DATA";
+      entities: EntityWithClasses[];
+      holders: Holder[];
+      holdings: Holding[];
+      transactions: TransactionWithAttachments[];
+    }
+  | { type: "SET_LOADING"; loading: boolean }
+  | { type: "SET_ERROR"; error: string | null }
   | { type: "TOGGLE_CHANGELOG" }
   | { type: "OPEN_MODAL"; modal: DashboardState["activeModal"] }
   | { type: "CLOSE_MODAL" }
@@ -56,6 +70,23 @@ function dashboardReducer(
   action: DashboardAction
 ): DashboardState {
   switch (action.type) {
+    case "INIT_DATA":
+      return {
+        ...state,
+        entities: action.entities,
+        holders: action.holders,
+        holdings: action.holdings,
+        transactions: action.transactions,
+        loading: false,
+        error: null,
+      };
+
+    case "SET_LOADING":
+      return { ...state, loading: action.loading };
+
+    case "SET_ERROR":
+      return { ...state, error: action.error, loading: false };
+
     case "TOGGLE_CHANGELOG":
       return { ...state, changeLogOpen: !state.changeLogOpen };
 
@@ -111,12 +142,14 @@ function dashboardReducer(
 // ── Initial State ──
 
 const initialState: DashboardState = {
-  entities: mockEntities,
-  holders: mockHolders,
-  holdings: mockHoldings,
-  transactions: mockTransactions,
+  entities: [],
+  holders: [],
+  holdings: [],
+  transactions: [],
   changeLogOpen: false,
   activeModal: null,
+  loading: true,
+  error: null,
 };
 
 // ── Context ──
@@ -128,6 +161,26 @@ const DashboardDispatchContext = createContext<Dispatch<DashboardAction>>(
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(dashboardReducer, initialState);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [entities, holders, holdings, transactions] = await Promise.all([
+          fetchEntitiesWithClasses(),
+          fetchHolders(),
+          fetchHoldings(),
+          fetchTransactionsWithAttachments(),
+        ]);
+        dispatch({ type: "INIT_DATA", entities, holders, holdings, transactions });
+      } catch (err) {
+        dispatch({
+          type: "SET_ERROR",
+          error: err instanceof Error ? err.message : "Failed to load data",
+        });
+      }
+    }
+    loadData();
+  }, []);
 
   return (
     <DashboardContext.Provider value={state}>

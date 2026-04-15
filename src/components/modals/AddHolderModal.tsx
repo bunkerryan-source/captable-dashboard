@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { useModal } from "@/hooks/useModal";
 import { useDashboardDispatch } from "@/context/DashboardContext";
 import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
+import { addHolder as dalAddHolder } from "@/lib/dal";
 import type { Holder } from "@/data/types";
 
 export function AddHolderModal() {
@@ -20,22 +21,30 @@ export function AddHolderModal() {
   const [taxIdLastFour, setTaxIdLastFour] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!name.trim()) return;
+    setSubmitting(true);
+    setError(null);
 
-    const holder: Holder = {
-      id: `h-${Date.now()}`,
-      name: name.trim(),
-      holderType: holderType as Holder["holderType"],
-      taxIdLastFour: taxIdLastFour || null,
-      contactEmail: contactEmail || null,
-      notes: notes || null,
-    };
-
-    dispatch({ type: "ADD_HOLDER", holder });
-    resetForm();
-    close();
+    try {
+      const holder = await dalAddHolder({
+        name: name.trim(),
+        holderType: holderType as Holder["holderType"],
+        taxIdLastFour: taxIdLastFour || null,
+        contactEmail: contactEmail || null,
+        notes: notes || null,
+      });
+      dispatch({ type: "ADD_HOLDER", holder });
+      resetForm();
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add holder");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetForm() {
@@ -44,6 +53,7 @@ export function AddHolderModal() {
     setTaxIdLastFour("");
     setContactEmail("");
     setNotes("");
+    setError(null);
   }
 
   function handleClose() {
@@ -61,8 +71,12 @@ export function AddHolderModal() {
           <Button variant="secondary" onClick={handleClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={!name.trim()}>
-            Add Holder
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={!name.trim() || submitting}
+          >
+            {submitting ? "Adding\u2026" : "Add Holder"}
           </Button>
         </>
       }
@@ -102,6 +116,11 @@ export function AddHolderModal() {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
+        {error && (
+          <div className="text-[13px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            {error}
+          </div>
+        )}
       </div>
     </ModalShell>
   );

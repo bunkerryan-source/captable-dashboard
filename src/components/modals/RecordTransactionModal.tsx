@@ -16,6 +16,8 @@ import { CorrectionFields } from "./transaction-fields/CorrectionFields";
 import { useModal } from "@/hooks/useModal";
 import { useSelectedEntity } from "@/hooks/useSelectedEntity";
 import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
+import { useAuth } from "@/context/AuthContext";
+import { recordTransaction as dalRecordTransaction } from "@/lib/dal";
 
 type TxType = "gift" | "sale" | "redemption" | "issuance" | "estate_transfer" | "correction";
 
@@ -33,11 +35,14 @@ export function RecordTransactionModal() {
   const { entity, holdersWithHoldings } = useSelectedEntity();
   const { holders } = useDashboard();
   const dispatch = useDashboardDispatch();
+  const { displayName } = useAuth();
 
   const [txType, setTxType] = useState<TxType>("gift");
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split("T")[0]);
   const [description, setDescription] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!entity) return null;
 
@@ -55,29 +60,37 @@ export function RecordTransactionModal() {
     setFieldValues((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!description.trim()) return;
+    setSubmitting(true);
+    setError(null);
 
-    const transaction = {
-      id: `tx-${Date.now()}`,
-      entityId: entity!.id,
-      transactionType: txType,
-      effectiveDate,
-      description: description.trim(),
-      metadata: { ...fieldValues },
-      createdAt: new Date().toISOString(),
-      createdBy: "Ryan Bunker",
-      attachments: [],
-    };
+    try {
+      const result = await dalRecordTransaction(
+        {
+          entityId: entity!.id,
+          transactionType: txType,
+          effectiveDate,
+          description: description.trim(),
+          metadata: { ...fieldValues },
+          createdBy: displayName ?? "Unknown",
+        },
+        []
+      );
 
-    dispatch({
-      type: "RECORD_TRANSACTION",
-      transaction,
-      holdingsUpdates: [],
-    });
+      dispatch({
+        type: "RECORD_TRANSACTION",
+        transaction: result.transaction,
+        holdingsUpdates: result.holdings,
+      });
 
-    resetForm();
-    close();
+      resetForm();
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to record transaction");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetForm() {
@@ -85,6 +98,7 @@ export function RecordTransactionModal() {
     setEffectiveDate(new Date().toISOString().split("T")[0]);
     setDescription("");
     setFieldValues({});
+    setError(null);
   }
 
   function handleClose() {
@@ -102,11 +116,15 @@ export function RecordTransactionModal() {
           <Button variant="secondary" onClick={handleClose}>
             Cancel
           </Button>
-          <Button variant="secondary" onClick={handleSubmit}>
+          <Button variant="secondary" onClick={handleSubmit} disabled={submitting}>
             Save as Draft
           </Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={!description.trim()}>
-            Record Transaction
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={!description.trim() || submitting}
+          >
+            {submitting ? "Recording\u2026" : "Record Transaction"}
           </Button>
         </>
       }
@@ -207,6 +225,12 @@ export function RecordTransactionModal() {
 
         {/* File upload */}
         <FileUploadZone />
+
+        {error && (
+          <div className="text-[13px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            {error}
+          </div>
+        )}
       </div>
     </ModalShell>
   );

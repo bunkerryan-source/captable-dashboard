@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
-import { DashboardProvider } from "@/context/DashboardContext";
+import { AuthProvider } from "@/context/AuthContext";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -23,7 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${outfit.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased">
-        <DashboardProvider>{children}</DashboardProvider>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

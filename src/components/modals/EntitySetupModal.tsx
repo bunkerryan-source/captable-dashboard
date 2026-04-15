@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { useModal } from "@/hooks/useModal";
 import { useDashboardDispatch } from "@/context/DashboardContext";
 import { ENTITY_TYPE_OPTIONS, UNIT_TYPE_OPTIONS } from "@/lib/constants";
-import type { EntityWithClasses, EntityType, EquityModel, UnitType } from "@/data/types";
+import { addEntity as dalAddEntity } from "@/lib/dal";
+import type { EntityType, EquityModel, UnitType } from "@/data/types";
 
 interface EquityClassRow {
-  id: string;
+  tempId: string;
   name: string;
   unitType: UnitType;
 }
@@ -30,13 +31,15 @@ export function EntitySetupModal() {
   const [showCommittedCapital, setShowCommittedCapital] = useState(false);
   const [notes, setNotes] = useState("");
   const [equityClasses, setEquityClasses] = useState<EquityClassRow[]>([
-    { id: `ec-new-${Date.now()}`, name: "Membership Interest", unitType: "percentage" },
+    { tempId: `tmp-${Date.now()}`, name: "Membership Interest", unitType: "percentage" },
   ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function addEquityClass() {
     setEquityClasses([
       ...equityClasses,
-      { id: `ec-new-${Date.now()}`, name: "", unitType: "percentage" },
+      { tempId: `tmp-${Date.now()}`, name: "", unitType: "percentage" },
     ]);
   }
 
@@ -51,33 +54,36 @@ export function EntitySetupModal() {
     setEquityClasses(equityClasses.filter((_, i) => i !== idx));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!name.trim() || equityClasses.some((ec) => !ec.name.trim())) return;
+    setSubmitting(true);
+    setError(null);
 
-    const entityId = `e-${Date.now()}`;
-    const entity: EntityWithClasses = {
-      id: entityId,
-      name: name.trim(),
-      entityType,
-      equityModel,
-      stateOfFormation: stateOfFormation || null,
-      dateOfFormation: dateOfFormation || null,
-      showCommittedCapital,
-      notes: notes || null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      equityClasses: equityClasses.map((ec, idx) => ({
-        id: ec.id,
-        entityId,
-        name: ec.name.trim(),
-        displayOrder: idx + 1,
-        unitType: ec.unitType,
-        isActive: true,
-      })),
-    };
-
-    dispatch({ type: "ADD_ENTITY", entity });
-    resetForm();
+    try {
+      const entity = await dalAddEntity({
+        name: name.trim(),
+        entityType,
+        equityModel,
+        stateOfFormation: stateOfFormation || null,
+        dateOfFormation: dateOfFormation || null,
+        showCommittedCapital,
+        notes: notes || null,
+        equityClasses: equityClasses.map((ec, idx) => ({
+          id: ec.tempId,
+          entityId: "",
+          name: ec.name.trim(),
+          displayOrder: idx + 1,
+          unitType: ec.unitType,
+          isActive: true,
+        })),
+      });
+      dispatch({ type: "ADD_ENTITY", entity });
+      resetForm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create entity");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetForm() {
@@ -89,8 +95,9 @@ export function EntitySetupModal() {
     setShowCommittedCapital(false);
     setNotes("");
     setEquityClasses([
-      { id: `ec-new-${Date.now()}`, name: "Membership Interest", unitType: "percentage" },
+      { tempId: `tmp-${Date.now()}`, name: "Membership Interest", unitType: "percentage" },
     ]);
+    setError(null);
   }
 
   function handleClose() {
@@ -112,9 +119,9 @@ export function EntitySetupModal() {
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={!name.trim() || equityClasses.some((ec) => !ec.name.trim())}
+            disabled={!name.trim() || equityClasses.some((ec) => !ec.name.trim()) || submitting}
           >
-            Create Entity
+            {submitting ? "Creating\u2026" : "Create Entity"}
           </Button>
         </>
       }
@@ -182,7 +189,7 @@ export function EntitySetupModal() {
 
         <div className="space-y-2">
           {equityClasses.map((ec, idx) => (
-            <div key={ec.id} className="flex items-end gap-2">
+            <div key={ec.tempId} className="flex items-end gap-2">
               <div className="flex-1">
                 <Input
                   label={idx === 0 ? "Class Name" : undefined}
@@ -218,6 +225,12 @@ export function EntitySetupModal() {
         >
           + Add equity class
         </button>
+
+        {error && (
+          <div className="text-[13px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            {error}
+          </div>
+        )}
       </div>
     </ModalShell>
   );
