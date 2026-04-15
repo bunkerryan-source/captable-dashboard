@@ -35,6 +35,7 @@ export function GiftFields({ holders, equityClasses, values, onChange }: GiftFie
       <div className="grid grid-cols-2 gap-3">
         <Select
           label="Equity Class"
+          placeholder={classOptions.length > 1 ? "Select class..." : undefined}
           options={classOptions}
           value={values.equityClass ?? ""}
           onChange={(e) => onChange("equityClass", e.target.value)}

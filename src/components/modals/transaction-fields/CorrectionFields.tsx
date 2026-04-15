@@ -42,6 +42,7 @@ export function CorrectionFields({ holders, equityClasses, values, onChange }: C
       {showEquityClass && (
         <Select
           label="Equity Class"
+          placeholder={classOptions.length > 1 ? "Select class..." : undefined}
           options={classOptions}
           value={values.equityClass ?? ""}
           onChange={(e) => onChange("equityClass", e.target.value)}

@@ -27,6 +27,7 @@ export function IssuanceFields({ holders, equityClasses, values, onChange }: Iss
         />
         <Select
           label="Equity Class"
+          placeholder={classOptions.length > 1 ? "Select class..." : undefined}
           options={classOptions}
           value={values.equityClass ?? ""}
           onChange={(e) => onChange("equityClass", e.target.value)}
