@@ -24,7 +24,7 @@ import {
   addHolder as dalAddHolder,
 } from "@/lib/dal";
 import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
-import type { Holder } from "@/data/types";
+import type { Holder, Holding } from "@/data/types";
 
 type TxType = "gift" | "sale" | "redemption" | "issuance" | "estate_transfer" | "correction";
 
@@ -40,7 +40,7 @@ const TX_TYPE_OPTIONS: { value: TxType; label: string }[] = [
 export function RecordTransactionModal() {
   const { isOpen, close } = useModal("recordTransaction");
   const { entity } = useSelectedEntity();
-  const { holders, transactions, editingTransactionId } = useDashboard();
+  const { holders, holdings, transactions, editingTransactionId } = useDashboard();
   const dispatch = useDashboardDispatch();
   const { displayName } = useAuth();
 
@@ -127,6 +127,105 @@ export function RecordTransactionModal() {
     setNewHolderType("individual");
   }
 
+  function parseNumericInput(value: string | undefined): number | null {
+    if (!value || !value.trim()) return null;
+    const cleaned = value.replace(/[$,%\s]/g, "");
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : num;
+  }
+
+  function buildHoldingsUpdates(): Omit<Holding, "id">[] {
+    if (!entity) return [];
+    const amount = parseNumericInput(fieldValues.amount);
+
+    switch (txType) {
+      case "issuance": {
+        if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
+          return [];
+        return [
+          {
+            entityId: entity.id,
+            holderId: fieldValues.holder,
+            equityClassId: fieldValues.equityClass,
+            amount,
+            committedCapital: parseNumericInput(fieldValues.capitalContribution),
+            holderRole: null,
+          },
+        ];
+      }
+
+      case "gift":
+      case "sale":
+      case "estate_transfer": {
+        if (
+          !fieldValues.fromHolder ||
+          !fieldValues.toHolder ||
+          !fieldValues.equityClass ||
+          amount === null
+        )
+          return [];
+
+        const fromHolding = holdings.find(
+          (h) =>
+            h.holderId === fieldValues.fromHolder &&
+            h.equityClassId === fieldValues.equityClass &&
+            h.entityId === entity.id
+        );
+        const toHolding = holdings.find(
+          (h) =>
+            h.holderId === fieldValues.toHolder &&
+            h.equityClassId === fieldValues.equityClass &&
+            h.entityId === entity.id
+        );
+
+        return [
+          {
+            entityId: entity.id,
+            holderId: fieldValues.fromHolder,
+            equityClassId: fieldValues.equityClass,
+            amount: (fromHolding?.amount ?? 0) - amount,
+            committedCapital: fromHolding?.committedCapital ?? null,
+            holderRole: fromHolding?.holderRole ?? null,
+          },
+          {
+            entityId: entity.id,
+            holderId: fieldValues.toHolder,
+            equityClassId: fieldValues.equityClass,
+            amount: (toHolding?.amount ?? 0) + amount,
+            committedCapital: toHolding?.committedCapital ?? null,
+            holderRole: toHolding?.holderRole ?? null,
+          },
+        ];
+      }
+
+      case "redemption": {
+        if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
+          return [];
+
+        const currentHolding = holdings.find(
+          (h) =>
+            h.holderId === fieldValues.holder &&
+            h.equityClassId === fieldValues.equityClass &&
+            h.entityId === entity.id
+        );
+
+        return [
+          {
+            entityId: entity.id,
+            holderId: fieldValues.holder,
+            equityClassId: fieldValues.equityClass,
+            amount: (currentHolding?.amount ?? 0) - amount,
+            committedCapital: currentHolding?.committedCapital ?? null,
+            holderRole: currentHolding?.holderRole ?? null,
+          },
+        ];
+      }
+
+      default:
+        return [];
+    }
+  }
+
   async function handleSubmit() {
     if (!description.trim()) return;
     setSubmitting(true);
@@ -143,7 +242,7 @@ export function RecordTransactionModal() {
         });
         dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
       } else {
-        // Create new transaction
+        // Create new transaction + update holdings
         const result = await dalRecordTransaction(
           {
             entityId: entity!.id,
@@ -153,7 +252,7 @@ export function RecordTransactionModal() {
             metadata: { ...fieldValues },
             createdBy: displayName ?? "Unknown",
           },
-          []
+          buildHoldingsUpdates()
         );
         dispatch({
           type: "RECORD_TRANSACTION",

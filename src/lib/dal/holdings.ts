@@ -20,7 +20,7 @@ export async function upsertHoldings(
 
   const { data, error } = await supabase
     .from("holdings")
-    .upsert(inserts)
+    .upsert(inserts, { onConflict: "entity_id,holder_id,equity_class_id" })
     .select();
 
   if (error) throw error;
