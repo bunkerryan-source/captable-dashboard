@@ -4,7 +4,7 @@
 
 Web-based cap table dashboard for ABP Capital. Tracks equity ownership across ~20-30 legal entities with a complete audit trail of transactions (gifts, sales, redemptions, transfers, issuances, corrections). Replaces spreadsheet-based tracking.
 
-**Current phase:** Phase 2 complete — live on Vercel with Supabase backend and multi-user auth.
+**Current phase:** Phase 4 complete — live on Vercel with Supabase backend, multi-user auth, historical snapshots, CSV export, file attachments, atomic holdings updates, rich change log, and holder detail sidebar.
 
 ## Deployment
 
@@ -56,7 +56,8 @@ src/
 │   │                            # FooterBar, MobileEntityBar
 │   ├── dashboard/               # MetadataRow, CapTable
 │   ├── changelog/               # ChangeLogPanel, ChangeLogEntry, ChangeLogFilters,
-│   │                            # TransactionBadge
+│   │                            # TransactionBadge (entries show rich transaction summaries)
+│   ├── holder-detail/           # HolderDetailPanel (sliding sidebar for holder transactions)
 │   ├── modals/                  # ModalShell, RecordTransactionModal, AddHolderModal,
 │   │   │                        # EntitySetupModal, EntitySettingsModal, InviteUserModal
 │   │   └── transaction-fields/  # GiftFields, SaleFields, RedemptionFields, etc.
@@ -83,10 +84,11 @@ src/
 │   │   ├── mappers.ts           # snake_case ↔ camelCase converters
 │   │   ├── entities.ts          # fetchEntitiesWithClasses, addEntity, updateEntity
 │   │   ├── holders.ts           # fetchHolders, addHolder
-│   │   ├── holdings.ts          # fetchHoldings, upsertHoldings
+│   │   ├── holdings.ts          # fetchHoldings, upsertHoldings, upsertHoldingsDelta
 │   │   ├── transactions.ts      # fetchTransactionsWithAttachments, recordTransaction
 │   │   └── auth.ts              # signIn, signOut, getCurrentUser, getUserProfile, inviteUser
 │   ├── formatters.ts            # Number/percent/currency/date formatting
+│   ├── formatTransactionSummary.ts # Human-readable summaries + holder transaction filter
 │   ├── computeTotals.ts         # Column summation for totals row
 │   └── constants.ts             # Transaction type configs, entity type labels
 └── middleware.ts                 # Next.js middleware: session refresh, auth redirects
@@ -103,6 +105,10 @@ src/
 - `transactions` — audit trail with type, date, metadata (jsonb)
 - `transaction_attachments` — files linked to transactions
 - `user_profiles` — links auth.users to app roles (admin/editor)
+
+**RPC functions:**
+- `upsert_holding_delta(p_entity_id, p_holder_id, p_equity_class_id, p_amount_delta, p_committed_capital?, p_holder_role?)` — Atomic upsert that adds `p_amount_delta` to existing holding amount (or inserts if new). Uses `COALESCE` to preserve existing `committed_capital` and `holder_role` when not provided.
+- `has_users()` — Returns boolean, used during first-user setup flow.
 
 ## Auth Architecture
 
@@ -140,6 +146,10 @@ src/
 
 **Pinned first column:** Sticky left-0 with explicit background colors and scroll-triggered box-shadow.
 
+**Atomic holdings updates:** Holdings are updated via `upsert_holding_delta` Supabase RPC that atomically increments amounts server-side. `RecordTransactionModal` sends delta amounts (not cumulative), eliminating stale-state bugs from rapid sequential transactions. The `HoldingDelta` type carries `amountDelta` instead of absolute `amount`.
+
+**Mutual exclusion panels:** The holder detail sidebar and change log panel cannot be open simultaneously. `SELECT_HOLDER` closes the change log; `TOGGLE_CHANGELOG` deselects any selected holder. Both use the same sliding panel pattern (420px wide, right-0, z-40).
+
 ## Known Issues / TODO
 
 - **Edge Function `verify_jwt` is `false`** — this is the recommended pattern per Supabase docs. The gateway's `verify_jwt` is a legacy mechanism being phased out in favor of functions handling their own auth. The `invite-user` function already validates the JWT and checks admin role internally. No change needed.
@@ -153,6 +163,12 @@ src/
 - **Historical snapshots** — "View cap table as of this date" button in change log replays transactions to reconstruct historical holdings. Amber banner with "Return to current" button when viewing historical state. Implemented in `src/lib/computeHistoricalHoldings.ts`.
 - **CSV export** — "Export current" exports the live cap table. "Export as of date..." opens a date picker and exports historical cap table as CSV. Implemented in `src/lib/exportCsv.ts`.
 - **File upload** — FileUploadZone wired to Supabase Storage (`transaction-attachments` bucket, private, RLS-protected). Files uploaded after transaction creation, displayed as clickable links in the change log with signed download URLs. DAL in `src/lib/dal/attachments.ts`.
+
+## Completed Features (Phase 4)
+
+- **Atomic holdings bug fix** — Replaced client-side cumulative amount computation with `upsert_holding_delta` Supabase RPC. Holdings are now updated atomically server-side using delta amounts, preventing stale-state bugs during rapid sequential transactions. `RecordTransactionModal.buildHoldingsDeltas()` returns `HoldingDelta[]` instead of cumulative `Holding[]`. DAL: `upsertHoldingsDelta()` in `src/lib/dal/holdings.ts`.
+- **Rich change log entries** — Each change log entry now displays a transaction summary line (e.g., "New issuance of 116,980 Common Stock to Paul Becker") above the notes text. Implemented in `src/lib/formatTransactionSummary.ts`. Resolves holder and equity class IDs from transaction metadata to human-readable names.
+- **Holder detail sidebar** — Click any holder row in the cap table to open a sliding sidebar (`src/components/holder-detail/HolderDetailPanel.tsx`) showing current holdings with ownership percentages and a chronological transaction timeline. Uses `getTransactionsForHolder()` to filter by holder ID across metadata fields. Mutually exclusive with the change log panel.
 
 ## Next Steps
 
