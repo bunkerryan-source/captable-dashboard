@@ -167,6 +167,11 @@ src/
   - Edit-path branch may be executing the `dispatch({ type: "UPDATE_TRANSACTION" })` path instead of the `INIT_DATA` path if `oldDeltas.length === 0 && newDeltas.length === 0`. Check whether a transaction being edited has metadata that produces empty deltas (e.g. missing `holder` key).
   - Verify the edge function is actually receiving and processing the reversal deltas — add console.log or check network tab on an edit.
   - **Ryan's current workaround:** Redeem the holder's entire position via a new transaction, delete the original (wrong) transaction from the log, then create a new transaction for the correct amount.
+- **🐞 OPEN BUG — Invited users have no way to set a password.** When an admin creates an invite link via the Invite User modal and the invitee clicks it, the `/auth/callback` route exchanges the code for a session and drops them on `/` signed in for that one session. But `auth.admin.generateLink({ type: "invite" })` creates the account with **no password**, and there's no UI to set one. Next session they can't sign in — the login page only supports (a) first-user setup (skipped once anyone exists) or (b) sign-in with existing password. Real-world symptom from Ashley Franco @ c3bank: link also expired before she clicked it (`error_code=otp_expired` in URL hash), so she bounced back to /login with no way forward. **Fix needed:**
+  - Build a `/set-password` page that calls `supabase.auth.updateUser({ password })`.
+  - Update `/auth/callback` to detect brand-new users (no password yet — check user metadata or a flag set during invite) and redirect them to `/set-password` instead of `/`.
+  - Consider showing a "Reset / set password" link on the login page that triggers `resetPasswordForEmail()` so stuck users can self-rescue without admin intervention.
+  - **Admin workaround in the meantime:** Generate a fresh invite link (24-hour TTL — have them click immediately). While they're signed in via the callback, either (a) they use the app in that session only, or (b) admin manually sets their password from Supabase Dashboard → Authentication → Users → Edit user. Neither is a real fix.
 - **Edge Function `verify_jwt` is `false`** — this is the recommended pattern per Supabase docs. The gateway's `verify_jwt` is a legacy mechanism being phased out in favor of functions handling their own auth. The `invite-user` function already validates the JWT and checks admin role internally. No change needed.
 - **Supabase Site URL** — verify in Supabase Dashboard (Authentication > URL Configuration) that Site URL is `https://cap-table-dashboard.vercel.app` and Redirect URLs includes `https://cap-table-dashboard.vercel.app/auth/callback`.
 - **Supabase email confirmation** — disabled manually in Supabase dashboard. If re-enabled, users will be blocked from logging in until they confirm email.
@@ -197,7 +202,8 @@ src/
 
 ## Next Steps
 
-1. **🐞 Fix the sign-out bug** (see Known Issues). Clicking Sign out does nothing; users can't leave without clearing site data.
-2. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Data-integrity adjacent — edit UI updates the transaction row but the cap table still shows pre-edit numbers.
-3. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
-4. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
+1. **🐞 Build the set-password flow for invited users** (see Known Issues). Blocking new-user onboarding — invitees can get in once via the link but can never sign in again afterward. Highest priority because it's the only bug that actively prevents adding real users.
+2. **🐞 Fix the sign-out bug** (see Known Issues). Clicking Sign out does nothing; users can't leave without clearing site data.
+3. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Data-integrity adjacent — edit UI updates the transaction row but the cap table still shows pre-edit numbers.
+4. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
+5. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
