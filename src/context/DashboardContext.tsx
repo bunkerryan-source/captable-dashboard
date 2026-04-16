@@ -36,6 +36,7 @@ export interface DashboardState {
     | "entitySettings"
     | null;
   editingTransactionId: string | null;
+  asOfDate: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -65,7 +66,8 @@ export type DashboardAction =
     }
   | { type: "SET_EDITING_TRANSACTION"; transactionId: string | null }
   | { type: "UPDATE_TRANSACTION"; transaction: TransactionWithAttachments }
-  | { type: "DELETE_TRANSACTION"; transactionId: string };
+  | { type: "DELETE_TRANSACTION"; transactionId: string }
+  | { type: "SET_AS_OF_DATE"; date: string | null };
 
 // ── Reducer ──
 
@@ -157,6 +159,9 @@ function dashboardReducer(
         ),
       };
 
+    case "SET_AS_OF_DATE":
+      return { ...state, asOfDate: action.date };
+
     default:
       return state;
   }
@@ -172,6 +177,7 @@ const initialState: DashboardState = {
   changeLogOpen: false,
   activeModal: null,
   editingTransactionId: null,
+  asOfDate: null,
   loading: true,
   error: null,
 };

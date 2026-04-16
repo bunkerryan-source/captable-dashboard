@@ -13,6 +13,7 @@ import { EntitySetupModal } from "@/components/modals/EntitySetupModal";
 import { EntitySettingsModal } from "@/components/modals/EntitySettingsModal";
 import { useSelectedEntity } from "@/hooks/useSelectedEntity";
 import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
+import { formatDate } from "@/lib/formatters";
 import {
   fetchEntitiesWithClasses,
   fetchHolders,
@@ -23,7 +24,7 @@ import {
 function DashboardContent() {
   const { entity, holdersWithHoldings, transactions, lastUpdated } =
     useSelectedEntity();
-  const { loading, error } = useDashboard();
+  const { loading, error, asOfDate } = useDashboard();
   const dispatch = useDashboardDispatch();
 
   if (loading) {
@@ -119,6 +120,25 @@ function DashboardContent() {
         key={entity.id}
         className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-6 py-5 space-y-4"
       >
+        {/* Historical snapshot banner */}
+        {asOfDate && (
+          <div className="animate-fade-in-up delay-0 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#b45309" strokeWidth="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M8 4.5V8l2.5 1.5" />
+            </svg>
+            <span className="text-[13px] text-amber-800">
+              Viewing cap table as of <strong>{formatDate(asOfDate)}</strong>
+            </span>
+            <button
+              onClick={() => dispatch({ type: "SET_AS_OF_DATE", date: null })}
+              className="ml-auto text-[12px] font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2 cursor-pointer transition-colors"
+            >
+              Return to current
+            </button>
+          </div>
+        )}
+
         {/* Entity name heading */}
         <div className="animate-fade-in-up delay-0">
           <h1 className="text-[20px] font-light tracking-[-0.01em] text-text-primary leading-tight">

@@ -22,6 +22,7 @@ import {
   recordTransaction as dalRecordTransaction,
   updateTransaction as dalUpdateTransaction,
   addHolder as dalAddHolder,
+  uploadAttachments as dalUploadAttachments,
 } from "@/lib/dal";
 import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
 import type { Holder, Holding } from "@/data/types";
@@ -52,6 +53,9 @@ export function RecordTransactionModal() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // File attachment state
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   // Inline "add holder" state
   const [addingHolderForField, setAddingHolderForField] = useState<string | null>(null);
@@ -274,6 +278,16 @@ export function RecordTransactionModal() {
           },
           buildHoldingsUpdates()
         );
+
+        // Upload attachments if any files selected
+        if (selectedFiles.length > 0) {
+          const attachments = await dalUploadAttachments(
+            result.transaction.id,
+            selectedFiles
+          );
+          result.transaction.attachments = attachments;
+        }
+
         dispatch({
           type: "RECORD_TRANSACTION",
           transaction: result.transaction,
@@ -297,6 +311,7 @@ export function RecordTransactionModal() {
     setEffectiveDate(new Date().toISOString().split("T")[0]);
     setDescription("");
     setFieldValues({});
+    setSelectedFiles([]);
     setError(null);
     setAddingHolderForField(null);
     setNewHolderName("");
@@ -448,7 +463,44 @@ export function RecordTransactionModal() {
         />
 
         {/* File upload */}
-        <FileUploadZone />
+        <FileUploadZone
+          onFilesSelected={(fileList) => {
+            setSelectedFiles((prev) => [...prev, ...Array.from(fileList)]);
+          }}
+        />
+
+        {/* Selected files list */}
+        {selectedFiles.length > 0 && (
+          <div className="space-y-1.5">
+            {selectedFiles.map((file, idx) => (
+              <div
+                key={`${file.name}-${idx}`}
+                className="flex items-center gap-2 text-[12px] text-text-secondary bg-surface px-2.5 py-1.5 rounded-lg"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M8.59 1.66l-5.66 5.66a4 4 0 105.66 5.66l5.66-5.66a2.67 2.67 0 10-3.77-3.77L4.82 9.21a1.33 1.33 0 101.89 1.89l5.18-5.19" />
+                </svg>
+                <span className="flex-1 truncate">{file.name}</span>
+                <span className="text-text-tertiary">
+                  {(file.size / 1024).toFixed(0)} KB
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedFiles((prev) =>
+                      prev.filter((_, i) => i !== idx)
+                    )
+                  }
+                  className="text-text-tertiary hover:text-red-600 transition-colors cursor-pointer"
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M4 4l8 8M12 4l-8 8" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {error && (
           <div className="text-[13px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">

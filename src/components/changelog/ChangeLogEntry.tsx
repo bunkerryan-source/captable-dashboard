@@ -6,7 +6,10 @@ import { formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/Button";
 import { useDashboardDispatch } from "@/context/DashboardContext";
 import { useAuth } from "@/context/AuthContext";
-import { deleteTransaction as dalDeleteTransaction } from "@/lib/dal";
+import {
+  deleteTransaction as dalDeleteTransaction,
+  getAttachmentUrl,
+} from "@/lib/dal";
 import type { TransactionWithAttachments } from "@/data/types";
 
 interface ChangeLogEntryProps {
@@ -135,8 +138,12 @@ export function ChangeLogEntry({ transaction }: ChangeLogEntryProps) {
       {transaction.attachments.length > 0 && (
         <div className="mt-2 space-y-1">
           {transaction.attachments.map((att) => (
-            <div
+            <button
               key={att.id}
+              onClick={async () => {
+                const url = await getAttachmentUrl(att.filePath);
+                window.open(url, "_blank");
+              }}
               className="flex items-center gap-1.5 text-[11px] text-text-secondary hover:text-trust-blue transition-colors cursor-pointer"
             >
               <svg
@@ -150,13 +157,18 @@ export function ChangeLogEntry({ transaction }: ChangeLogEntryProps) {
                 <path d="M8.59 1.66l-5.66 5.66a4 4 0 105.66 5.66l5.66-5.66a2.67 2.67 0 10-3.77-3.77L4.82 9.21a1.33 1.33 0 101.89 1.89l5.18-5.19" />
               </svg>
               <span className="truncate">{att.fileName}</span>
-            </div>
+            </button>
           ))}
         </div>
       )}
 
       {/* Snapshot tag */}
-      <button className="mt-2.5 text-[11px] text-trust-blue/80 hover:text-trust-blue px-2.5 py-1 rounded-md border border-trust-blue/15 hover:border-trust-blue/30 hover:bg-trust-blue/5 transition-all cursor-pointer">
+      <button
+        onClick={() =>
+          dispatch({ type: "SET_AS_OF_DATE", date: transaction.effectiveDate })
+        }
+        className="mt-2.5 text-[11px] text-trust-blue/80 hover:text-trust-blue px-2.5 py-1 rounded-md border border-trust-blue/15 hover:border-trust-blue/30 hover:bg-trust-blue/5 transition-all cursor-pointer"
+      >
         View cap table as of this date
       </button>
     </div>

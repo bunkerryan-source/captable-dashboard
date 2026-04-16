@@ -1,7 +1,11 @@
 "use client";
 
+import { useRef } from "react";
 import { Button } from "@/components/ui/Button";
-import { useDashboardDispatch } from "@/context/DashboardContext";
+import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
+import { useSelectedEntity } from "@/hooks/useSelectedEntity";
+import { exportCapTableCsv } from "@/lib/exportCsv";
+import { computeHoldingsAsOfDate } from "@/lib/computeHistoricalHoldings";
 
 interface FooterBarProps {
   transactionCount: number;
@@ -9,6 +13,51 @@ interface FooterBarProps {
 
 export function FooterBar({ transactionCount }: FooterBarProps) {
   const dispatch = useDashboardDispatch();
+  const { entity, holdersWithHoldings } = useSelectedEntity();
+  const { holders, transactions, asOfDate } = useDashboard();
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  function handleExportCurrent() {
+    if (!entity) return;
+    exportCapTableCsv(entity, holdersWithHoldings, {
+      asOfDate: asOfDate ?? undefined,
+    });
+  }
+
+  function handleExportAsOfDate(dateStr: string) {
+    if (!entity || !dateStr) return;
+
+    // Compute historical holdings for the chosen date
+    const historicalHoldings = computeHoldingsAsOfDate(
+      transactions,
+      entity.id,
+      dateStr
+    );
+
+    // Group into HolderWithHoldings structure
+    const holderIds = [
+      ...new Set(historicalHoldings.map((h) => h.holderId)),
+    ];
+    const historicalHwh = holderIds
+      .map((holderId) => {
+        const holder = holders.find((h) => h.id === holderId);
+        if (!holder) return null;
+        const hldgs = historicalHoldings.filter(
+          (h) => h.holderId === holderId
+        );
+        return {
+          holder,
+          holdings: hldgs,
+          role: hldgs[0]?.holderRole ?? null,
+        };
+      })
+      .filter(
+        (h): h is NonNullable<typeof h> => h !== null
+      )
+      .filter((h) => h.holdings.some((hld) => (hld.amount ?? 0) > 0));
+
+    exportCapTableCsv(entity, historicalHwh, { asOfDate: dateStr });
+  }
 
   return (
     <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
@@ -28,12 +77,30 @@ export function FooterBar({ transactionCount }: FooterBarProps) {
 
       {/* Export Buttons */}
       <div className="flex items-center gap-2">
-        <Button variant="secondary" size="sm">
+        <Button variant="secondary" size="sm" onClick={handleExportCurrent}>
           Export current
         </Button>
-        <Button variant="secondary" size="sm" className="hidden sm:inline-flex">
-          Export as of date...
-        </Button>
+        <div className="relative hidden sm:inline-flex">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => dateInputRef.current?.showPicker()}
+          >
+            Export as of date...
+          </Button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+            onChange={(e) => {
+              if (e.target.value) {
+                handleExportAsOfDate(e.target.value);
+                e.target.value = "";
+              }
+            }}
+            tabIndex={-1}
+          />
+        </div>
       </div>
     </div>
   );

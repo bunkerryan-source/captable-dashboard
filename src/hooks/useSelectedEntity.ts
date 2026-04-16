@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useDashboard } from "@/context/DashboardContext";
+import { computeHoldingsAsOfDate } from "@/lib/computeHistoricalHoldings";
 import type {
   EntityWithClasses,
   HolderWithHoldings,
@@ -18,7 +19,7 @@ interface SelectedEntityData {
 
 export function useSelectedEntity(): SelectedEntityData {
   const searchParams = useSearchParams();
-  const { entities, holders, holdings, transactions } = useDashboard();
+  const { entities, holders, holdings, transactions, asOfDate } = useDashboard();
 
   const entityId = searchParams.get("entity") ?? entities[0]?.id ?? null;
 
@@ -34,8 +35,10 @@ export function useSelectedEntity(): SelectedEntityData {
       };
     }
 
-    // Get holdings for this entity
-    const entityHoldings = holdings.filter((h) => h.entityId === entity.id);
+    // Get holdings: historical (replayed) or current
+    const entityHoldings = asOfDate
+      ? computeHoldingsAsOfDate(transactions, entity.id, asOfDate)
+      : holdings.filter((h) => h.entityId === entity.id);
 
     // Group holdings by holder
     const holderIds = [...new Set(entityHoldings.map((h) => h.holderId))];
@@ -85,5 +88,5 @@ export function useSelectedEntity(): SelectedEntityData {
       transactions: entityTransactions,
       lastUpdated,
     };
-  }, [entityId, entities, holders, holdings, transactions]);
+  }, [entityId, entities, holders, holdings, transactions, asOfDate]);
 }

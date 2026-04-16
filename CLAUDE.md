@@ -148,10 +148,13 @@ src/
 - **Multi-class % of Total** — The "% of Total" column currently uses the first non-percentage equity class for its calculation. Entities with multiple non-percentage classes (e.g., Class A Shares + Class B Shares) need per-class percentage columns instead of a single aggregate column.
 - **Diluted vs. undiluted ownership** — Some entities have options or profits interests. The cap table will need two percentage columns: one for regular ownership (excluding options/profits interests) and one for fully diluted ownership (including options/profits interests). Requires a way to flag equity classes as dilutive instruments (options, profits interests) vs. base equity, then compute both percentages.
 
+## Completed Features (Phase 3)
+
+- **Historical snapshots** — "View cap table as of this date" button in change log replays transactions to reconstruct historical holdings. Amber banner with "Return to current" button when viewing historical state. Implemented in `src/lib/computeHistoricalHoldings.ts`.
+- **CSV export** — "Export current" exports the live cap table. "Export as of date..." opens a date picker and exports historical cap table as CSV. Implemented in `src/lib/exportCsv.ts`.
+- **File upload** — FileUploadZone wired to Supabase Storage (`transaction-attachments` bucket, private, RLS-protected). Files uploaded after transaction creation, displayed as clickable links in the change log with signed download URLs. DAL in `src/lib/dal/attachments.ts`.
+
 ## Next Steps
 
 1. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
 2. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
-3. **Export functionality** — Wire up "Export current" and "Export as of date" buttons.
-4. **Historical snapshots** — "View cap table as of this date" in the change log.
-5. **File upload** — Wire FileUploadZone to Supabase Storage for transaction attachments.

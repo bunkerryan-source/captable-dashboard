@@ -14,3 +14,4 @@ export {
   getUserProfile,
   inviteUser,
 } from "./auth";
+export { uploadAttachments, getAttachmentUrl } from "./attachments";
