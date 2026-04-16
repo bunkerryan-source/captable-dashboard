@@ -53,6 +53,8 @@ export function useSelectedEntity(): SelectedEntityData {
         return { holder, holdings: holderHoldings, role };
       })
       .filter((h): h is HolderWithHoldings => h !== null)
+      // Remove holders whose position has gone to zero
+      .filter((h) => h.holdings.some((hld) => (hld.amount ?? 0) > 0))
       .sort((a, b) => {
         // Pin GP/managing member to top
         const aIsGP =

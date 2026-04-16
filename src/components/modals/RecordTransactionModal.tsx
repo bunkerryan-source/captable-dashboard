@@ -154,14 +154,22 @@ export function RecordTransactionModal() {
       case "issuance": {
         if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
           return [];
+
+        const existingHolding = holdings.find(
+          (h) =>
+            h.holderId === fieldValues.holder &&
+            h.equityClassId === fieldValues.equityClass &&
+            h.entityId === entity.id
+        );
+
         return [
           {
             entityId: entity.id,
             holderId: fieldValues.holder,
             equityClassId: fieldValues.equityClass,
-            amount,
+            amount: (existingHolding?.amount ?? 0) + amount,
             committedCapital: parseNumericInput(fieldValues.capitalContribution),
-            holderRole: null,
+            holderRole: existingHolding?.holderRole ?? null,
           },
         ];
       }

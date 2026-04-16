@@ -79,7 +79,7 @@ export function AppHeader() {
             <span className="md:hidden">+ Record</span>
           </Button>
           <Button
-            variant="ghost-light"
+            variant="primary"
             size="md"
             className="hidden sm:inline-flex"
             onClick={() => dispatch({ type: "OPEN_MODAL", modal: "addHolder" })}
