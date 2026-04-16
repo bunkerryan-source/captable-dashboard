@@ -4,7 +4,7 @@
 
 Web-based cap table dashboard for ABP Capital. Tracks equity ownership across ~20-30 legal entities with a complete audit trail of transactions (gifts, sales, redemptions, transfers, issuances, corrections). Replaces spreadsheet-based tracking.
 
-**Current phase:** Phase 4 complete — live on Vercel with Supabase backend, multi-user auth, historical snapshots, CSV export, file attachments, atomic holdings updates, rich change log, and holder detail sidebar.
+**Current phase:** Phase 5 complete — live on Vercel with Supabase backend, multi-user auth with copy-link invites, historical snapshots, CSV export, file attachments (add on edit too), atomic holdings updates, rich change log, holder detail sidebar, cap table sorted by position, and auth-resilient middleware that clears broken cookies automatically.
 
 ## Deployment
 
@@ -113,10 +113,13 @@ src/
 ## Auth Architecture
 
 - **Roles:** `admin` (full access + invite users), `editor` (full data access)
-- **Flow:** Email/password login. Admin invites users via Edge Function (`invite-user`).
-- **Edge Function:** `invite-user` (v5, `verify_jwt: false`) — decodes JWT from Authorization header, checks admin role via user_profiles, calls `auth.admin.inviteUserByEmail()`, auto-creates user_profiles entry. Returns friendly 409 if user already invited.
-- **Client-side:** `inviteUser()` in DAL uses `supabase.functions.invoke()` (not raw fetch). Extracts actual error messages from `FunctionsHttpError.context` so the UI shows meaningful errors.
-- **Auth resilience:** `AuthContext` starts the `getUser()` call during the render phase (not in `useEffect`) because React 19 + Next.js 16 sometimes fails to flush passive effects after hydrating statically-prerendered pages. A `useRef` guard ensures it runs only once. The `onAuthStateChange` listener is kept in `useEffect` for proper cleanup. The browser client also bypasses the Web Locks API (`navigator.locks`) to prevent orphaned locks from hanging `getUser()`. Middleware copies cookie updates to redirect responses so expired sessions are properly cleared on the browser.
+- **Flow:** Email/password login. Admin creates invite links via Edge Function (`invite-user`) and sends them through their own email client — the app never relies on Supabase's rate-limited default SMTP.
+- **Edge Function:** `invite-user` (v6, `verify_jwt: false`) — decodes JWT from Authorization header, checks admin role via user_profiles, then calls `auth.admin.generateLink()` to produce a signup link (new user) or magic link (existing user). Returns `{ inviteUrl, isExisting }` so the UI can display a copy-to-clipboard link. Auto-creates a `user_profiles` row for new users with the requested role.
+- **Client-side invite:** `inviteUser()` in DAL returns `{ inviteUrl, isExisting }`. Passes `window.location.origin` as `siteUrl` so generated links redirect to the correct environment (dev / preview / prod).
+- **Invite UI:** `InviteUserModal` has two states: form (email/role/displayName) and link-display (the URL with a Copy button + 24-hour/single-use notice). No "email sent" confirmation state — the admin delivers the link themselves.
+- **Sign out:** `signOut()` calls Supabase with `scope: 'local'` to clear only local cookies (no server roundtrip, so it works even when the session is stale). `AppHeader.handleSignOut` follows up with `window.location.href = '/login'` to force a full reload and reset all client state.
+- **Auth resilience:** `AuthContext` starts the `getUser()` call during the render phase (not in `useEffect`) because React 19 + Next.js 16 sometimes fails to flush passive effects after hydrating statically-prerendered pages. A `useRef` guard ensures it runs only once. The `onAuthStateChange` listener is kept in `useEffect` for proper cleanup. The browser client also bypasses the Web Locks API (`navigator.locks`) to prevent orphaned locks from hanging `getUser()`.
+- **Cookie hygiene in middleware:** When `getUser()` fails or returns an error (corrupt/expired refresh token), middleware proactively deletes all `sb-*` cookies on the redirect response. This prevents the "must clear site data to load the site" failure mode where the browser keeps sending broken auth cookies on every request, and middleware keeps redirecting without ever telling the browser to forget them.
 - **Auth gating:** `(dashboard)/layout.tsx` is a client component that waits for `useAuth().loading` to be false before mounting `DashboardProvider`, preventing data fetches before the auth session is hydrated.
 - **Admin transaction management:** Admins can edit and delete transactions from the change log. Edit opens the RecordTransactionModal pre-populated with existing data. Delete shows an inline confirmation.
 - **Add Holder from transaction form:** When "+ Add new holder..." is selected in any holder dropdown within the Record Transaction modal, an inline mini-form appears (name + type). On submit, the new holder is created and auto-selected in the dropdown.
@@ -142,7 +145,7 @@ src/
 
 **Auth → Data sequencing:** DashboardProvider is gated behind auth loading. Without this, data fetches fire before the session is hydrated, and RLS returns empty results.
 
-**GP/managing member sorting:** Always pinned to top of cap table, rest alphabetical.
+**Cap table sort order:** GP / managing member always pinned to top. All other holders sorted by total position across all classes, descending (sum of `holding.amount` across classes). Alphabetical tiebreak for stable ordering. Implemented in `useSelectedEntity.ts`.
 
 **Pinned first column:** Sticky left-0 with explicit background colors and scroll-triggered box-shadow.
 
@@ -152,9 +155,16 @@ src/
 
 ## Known Issues / TODO
 
+- **🐞 OPEN BUG — Edit transaction doesn't update cap table holdings.** When an admin edits a transaction from the change log (e.g. fixing a share count), the transaction record itself updates correctly but the cap table still reflects the original numbers. **First fix attempt (Phase 5, commit `638d594`) did not resolve it** — the intended logic reverses the original transaction's deltas and applies new deltas via `upsert_holding_delta`, but users still see stale cap table data after edit. **Suspect areas to investigate next time:**
+  - The `computeDeltas()` call reads `original.metadata` from the in-memory `transactions` array. If the original metadata stored as JSONB contains non-string values or different key casing than expected, the deltas could be empty/wrong.
+  - The `INIT_DATA` dispatch in the edit path uses `entities` and `holders` from current context state (not a fresh fetch), which is correct, but `dalFetchHoldings()` is awaited right before — if the RPC commit hasn't propagated to read replicas yet, we'd fetch stale data. (Unlikely on Supabase single-region but worth ruling out.)
+  - Edit-path branch may be executing the `dispatch({ type: "UPDATE_TRANSACTION" })` path instead of the `INIT_DATA` path if `oldDeltas.length === 0 && newDeltas.length === 0`. Check whether a transaction being edited has metadata that produces empty deltas (e.g. missing `holder` key).
+  - Verify the edge function is actually receiving and processing the reversal deltas — add console.log or check network tab on an edit.
+  - **Ryan's current workaround:** Redeem the holder's entire position via a new transaction, delete the original (wrong) transaction from the log, then create a new transaction for the correct amount.
 - **Edge Function `verify_jwt` is `false`** — this is the recommended pattern per Supabase docs. The gateway's `verify_jwt` is a legacy mechanism being phased out in favor of functions handling their own auth. The `invite-user` function already validates the JWT and checks admin role internally. No change needed.
 - **Supabase Site URL** — verify in Supabase Dashboard (Authentication > URL Configuration) that Site URL is `https://cap-table-dashboard.vercel.app` and Redirect URLs includes `https://cap-table-dashboard.vercel.app/auth/callback`.
 - **Supabase email confirmation** — disabled manually in Supabase dashboard. If re-enabled, users will be blocked from logging in until they confirm email.
+- **Supabase SMTP not configured** — Intentional. The invite flow uses copy-link (admin delivers manually) specifically to avoid the Supabase default SMTP rate limit (~2-4 emails/hour per project). If custom SMTP is ever configured later, the `invite-user` edge function could be reverted to `inviteUserByEmail()` — but the current copy-link flow is arguably better UX (admin stays in control of messaging).
 - **Multi-class % of Total** — The "% of Total" column currently uses the first non-percentage equity class for its calculation. Entities with multiple non-percentage classes (e.g., Class A Shares + Class B Shares) need per-class percentage columns instead of a single aggregate column.
 - **Diluted vs. undiluted ownership** — Some entities have options or profits interests. The cap table will need two percentage columns: one for regular ownership (excluding options/profits interests) and one for fully diluted ownership (including options/profits interests). Requires a way to flag equity classes as dilutive instruments (options, profits interests) vs. base equity, then compute both percentages.
 
@@ -170,7 +180,17 @@ src/
 - **Rich change log entries** — Each change log entry now displays a transaction summary line (e.g., "New issuance of 116,980 Common Stock to Paul Becker") above the notes text. Implemented in `src/lib/formatTransactionSummary.ts`. Resolves holder and equity class IDs from transaction metadata to human-readable names.
 - **Holder detail sidebar** — Click any holder row in the cap table to open a sliding sidebar (`src/components/holder-detail/HolderDetailPanel.tsx`) showing current holdings with ownership percentages and a chronological transaction timeline. Uses `getTransactionsForHolder()` to filter by holder ID across metadata fields. Mutually exclusive with the change log panel.
 
+## Completed Features (Phase 5)
+
+- **Middleware cookie hygiene (fixes "must clear site data" bug)** — When auth fails in middleware, all `sb-*` cookies are proactively deleted on the redirect response. Prevents the browser from infinitely resending broken refresh tokens and getting stuck in a redirect loop. See `clearSupabaseCookies()` in `src/lib/supabase/middleware.ts`.
+- **Reliable sign out** — Changed to `signOut({ scope: 'local' })` so it works even when the session is already stale (no server roundtrip that could hang). Follow-up uses `window.location.href` for a full reload to reset all client state.
+- **Copy-link invite flow** — Replaced Supabase's default-SMTP invite emails (which silently drop after hitting the ~2-4/hour rate limit) with an in-app copy-link flow. Admin clicks Invite, modal shows a one-time signup link with a Copy button, admin sends it via their own email. Edge function v6 uses `auth.admin.generateLink()`. Handles both new users (invite link) and existing users (magic link) transparently. Links carry the current origin as `redirectTo` so they work across dev/preview/prod.
+- **Cap table sort by position** — Holders now ordered by total amount across all equity classes, descending. GP / managing member still pinned to top. Alpha tiebreak.
+- **Attachments on transaction edit** — The edit modal now accepts file uploads too. Appends new attachments to the existing list rather than replacing. Useful when you log a transaction and want to add supporting docs later.
+- **Transaction edit → holdings update (ATTEMPTED, NOT WORKING)** — `RecordTransactionModal.handleSubmit` was refactored to, on edit, compute the original transaction's deltas, reverse them, apply new deltas via `upsert_holding_delta`, then refetch holdings. **This is not actually working in production** — see Known Issues / TODO for debugging notes.
+
 ## Next Steps
 
-1. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
-2. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
+1. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Highest priority — data-integrity adjacent. The edit UI updates the transaction row but the cap table still shows pre-edit numbers.
+2. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
+3. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
