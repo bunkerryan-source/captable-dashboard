@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TransactionBadge } from "./TransactionBadge";
 import { formatDate } from "@/lib/formatters";
+import { formatTransactionSummary } from "@/lib/formatTransactionSummary";
 import { Button } from "@/components/ui/Button";
 import { useDashboardDispatch } from "@/context/DashboardContext";
 import { useAuth } from "@/context/AuthContext";
@@ -10,13 +11,15 @@ import {
   deleteTransaction as dalDeleteTransaction,
   getAttachmentUrl,
 } from "@/lib/dal";
-import type { TransactionWithAttachments } from "@/data/types";
+import type { TransactionWithAttachments, Holder, EquityClass } from "@/data/types";
 
 interface ChangeLogEntryProps {
   transaction: TransactionWithAttachments;
+  holders: Holder[];
+  equityClasses: EquityClass[];
 }
 
-export function ChangeLogEntry({ transaction }: ChangeLogEntryProps) {
+export function ChangeLogEntry({ transaction, holders, equityClasses }: ChangeLogEntryProps) {
   const dispatch = useDashboardDispatch();
   const { role } = useAuth();
   const isAdmin = role === "admin";
@@ -24,6 +27,8 @@ export function ChangeLogEntry({ transaction }: ChangeLogEntryProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const summary = formatTransactionSummary(transaction, holders, equityClasses);
 
   function handleEdit() {
     dispatch({
@@ -124,8 +129,15 @@ export function ChangeLogEntry({ transaction }: ChangeLogEntryProps) {
         </div>
       )}
 
-      {/* Description */}
-      <p className="text-[13px] text-text-primary leading-relaxed">
+      {/* Transaction summary */}
+      {summary && (
+        <p className="text-[13px] font-medium text-text-primary leading-relaxed">
+          {summary}
+        </p>
+      )}
+
+      {/* Description / notes */}
+      <p className={`text-[13px] leading-relaxed ${summary ? "text-text-secondary mt-0.5" : "text-text-primary"}`}>
         {transaction.description}
       </p>
 

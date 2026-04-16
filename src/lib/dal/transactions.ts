@@ -4,8 +4,9 @@ import type {
   Transaction,
   TransactionWithAttachments,
   Holding,
+  HoldingDelta,
 } from "@/data/types";
-import { upsertHoldings } from "./holdings";
+import { upsertHoldingsDelta } from "./holdings";
 import type { Json, TablesUpdate } from "@/lib/supabase/types";
 
 export async function fetchTransactionsWithAttachments(): Promise<
@@ -27,7 +28,7 @@ export async function fetchTransactionsWithAttachments(): Promise<
 
 export async function recordTransaction(
   tx: Omit<Transaction, "id" | "createdAt">,
-  holdingsUpdates: Omit<Holding, "id">[]
+  holdingsDeltas: HoldingDelta[]
 ): Promise<{
   transaction: TransactionWithAttachments;
   holdings: Holding[];
@@ -44,7 +45,7 @@ export async function recordTransaction(
   if (txError) throw txError;
 
   // Upsert any holdings changes
-  const updatedHoldings = await upsertHoldings(holdingsUpdates);
+  const updatedHoldings = await upsertHoldingsDelta(holdingsDeltas);
 
   return {
     transaction: {

@@ -25,7 +25,7 @@ import {
   uploadAttachments as dalUploadAttachments,
 } from "@/lib/dal";
 import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
-import type { Holder, Holding } from "@/data/types";
+import type { Holder, HoldingDelta } from "@/data/types";
 
 type TxType = "gift" | "sale" | "redemption" | "issuance" | "estate_transfer" | "correction";
 
@@ -41,7 +41,7 @@ const TX_TYPE_OPTIONS: { value: TxType; label: string }[] = [
 export function RecordTransactionModal() {
   const { isOpen, close } = useModal("recordTransaction");
   const { entity } = useSelectedEntity();
-  const { holders, holdings, transactions, editingTransactionId } = useDashboard();
+  const { holders, transactions, editingTransactionId } = useDashboard();
   const dispatch = useDashboardDispatch();
   const { displayName } = useAuth();
 
@@ -150,7 +150,7 @@ export function RecordTransactionModal() {
     return isNaN(num) ? null : num;
   }
 
-  function buildHoldingsUpdates(): Omit<Holding, "id">[] {
+  function buildHoldingsDeltas(): HoldingDelta[] {
     if (!entity) return [];
     const amount = parseNumericInput(fieldValues.amount);
 
@@ -159,21 +159,14 @@ export function RecordTransactionModal() {
         if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
           return [];
 
-        const existingHolding = holdings.find(
-          (h) =>
-            h.holderId === fieldValues.holder &&
-            h.equityClassId === fieldValues.equityClass &&
-            h.entityId === entity.id
-        );
-
         return [
           {
             entityId: entity.id,
             holderId: fieldValues.holder,
             equityClassId: fieldValues.equityClass,
-            amount: (existingHolding?.amount ?? 0) + amount,
-            committedCapital: parseNumericInput(fieldValues.capitalContribution),
-            holderRole: existingHolding?.holderRole ?? null,
+            amountDelta: amount,
+            committedCapital: parseNumericInput(fieldValues.capitalContribution) ?? undefined,
+            holderRole: undefined,
           },
         ];
       }
@@ -189,35 +182,18 @@ export function RecordTransactionModal() {
         )
           return [];
 
-        const fromHolding = holdings.find(
-          (h) =>
-            h.holderId === fieldValues.fromHolder &&
-            h.equityClassId === fieldValues.equityClass &&
-            h.entityId === entity.id
-        );
-        const toHolding = holdings.find(
-          (h) =>
-            h.holderId === fieldValues.toHolder &&
-            h.equityClassId === fieldValues.equityClass &&
-            h.entityId === entity.id
-        );
-
         return [
           {
             entityId: entity.id,
             holderId: fieldValues.fromHolder,
             equityClassId: fieldValues.equityClass,
-            amount: (fromHolding?.amount ?? 0) - amount,
-            committedCapital: fromHolding?.committedCapital ?? null,
-            holderRole: fromHolding?.holderRole ?? null,
+            amountDelta: -amount,
           },
           {
             entityId: entity.id,
             holderId: fieldValues.toHolder,
             equityClassId: fieldValues.equityClass,
-            amount: (toHolding?.amount ?? 0) + amount,
-            committedCapital: toHolding?.committedCapital ?? null,
-            holderRole: toHolding?.holderRole ?? null,
+            amountDelta: amount,
           },
         ];
       }
@@ -226,21 +202,12 @@ export function RecordTransactionModal() {
         if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
           return [];
 
-        const currentHolding = holdings.find(
-          (h) =>
-            h.holderId === fieldValues.holder &&
-            h.equityClassId === fieldValues.equityClass &&
-            h.entityId === entity.id
-        );
-
         return [
           {
             entityId: entity.id,
             holderId: fieldValues.holder,
             equityClassId: fieldValues.equityClass,
-            amount: (currentHolding?.amount ?? 0) - amount,
-            committedCapital: currentHolding?.committedCapital ?? null,
-            holderRole: currentHolding?.holderRole ?? null,
+            amountDelta: -amount,
           },
         ];
       }
@@ -276,7 +243,7 @@ export function RecordTransactionModal() {
             metadata: { ...fieldValues },
             createdBy: displayName ?? "Unknown",
           },
-          buildHoldingsUpdates()
+          buildHoldingsDeltas()
         );
 
         // Upload attachments if any files selected

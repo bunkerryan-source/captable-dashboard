@@ -101,3 +101,12 @@ export interface HolderWithHoldings {
 export interface TransactionWithAttachments extends Transaction {
   attachments: TransactionAttachment[];
 }
+
+export interface HoldingDelta {
+  entityId: string;
+  holderId: string;
+  equityClassId: string;
+  amountDelta: number;
+  committedCapital?: number | null;
+  holderRole?: string | null;
+}

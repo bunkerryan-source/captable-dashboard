@@ -1,6 +1,7 @@
 "use client";
 
 import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
+import { useSelectedEntity } from "@/hooks/useSelectedEntity";
 import { useChangeLog } from "@/hooks/useChangeLog";
 import { ChangeLogEntry } from "./ChangeLogEntry";
 import { ChangeLogFilters } from "./ChangeLogFilters";
@@ -12,7 +13,8 @@ interface ChangeLogPanelProps {
 }
 
 export function ChangeLogPanel({ transactions }: ChangeLogPanelProps) {
-  const { changeLogOpen } = useDashboard();
+  const { changeLogOpen, holders } = useDashboard();
+  const { entity } = useSelectedEntity();
   const dispatch = useDashboardDispatch();
   const {
     filtered,
@@ -24,6 +26,7 @@ export function ChangeLogPanel({ transactions }: ChangeLogPanelProps) {
     setDateTo,
   } = useChangeLog({ transactions });
 
+  const equityClasses = entity?.equityClasses ?? [];
   const close = () => dispatch({ type: "TOGGLE_CHANGELOG" });
 
   return (
@@ -71,7 +74,12 @@ export function ChangeLogPanel({ transactions }: ChangeLogPanelProps) {
             </div>
           ) : (
             filtered.map((tx) => (
-              <ChangeLogEntry key={tx.id} transaction={tx} />
+              <ChangeLogEntry
+                key={tx.id}
+                transaction={tx}
+                holders={holders}
+                equityClasses={equityClasses}
+              />
             ))
           )}
         </div>

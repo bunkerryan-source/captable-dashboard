@@ -272,7 +272,32 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_users: { Args: never; Returns: boolean }
+      upsert_holding_delta: {
+        Args: {
+          p_amount_delta: number
+          p_committed_capital?: number
+          p_entity_id: string
+          p_equity_class_id: string
+          p_holder_id: string
+          p_holder_role?: string
+        }
+        Returns: {
+          amount: number | null
+          committed_capital: number | null
+          entity_id: string
+          equity_class_id: string
+          holder_id: string
+          holder_role: string | null
+          id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "holdings"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
     }
     Enums: {
       [_ in never]: never

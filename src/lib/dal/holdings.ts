@@ -26,3 +26,30 @@ export async function upsertHoldings(
   if (error) throw error;
   return (data ?? []).map(mapHolding);
 }
+
+export async function upsertHoldingsDelta(
+  deltas: import("@/data/types").HoldingDelta[]
+): Promise<Holding[]> {
+  if (deltas.length === 0) return [];
+
+  const supabase = createClient();
+  const results: Holding[] = [];
+
+  for (const d of deltas) {
+    const { data, error } = await supabase.rpc("upsert_holding_delta", {
+      p_entity_id: d.entityId,
+      p_holder_id: d.holderId,
+      p_equity_class_id: d.equityClassId,
+      p_amount_delta: d.amountDelta,
+      p_committed_capital: d.committedCapital ?? undefined,
+      p_holder_role: d.holderRole ?? undefined,
+    });
+    if (error) throw error;
+    if (data) {
+      const rows = Array.isArray(data) ? data : [data];
+      results.push(...rows.map(mapHolding));
+    }
+  }
+
+  return results;
+}

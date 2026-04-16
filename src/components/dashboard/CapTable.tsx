@@ -8,9 +8,10 @@ import { computeTotals, computeCommittedCapitalTotal } from "@/lib/computeTotals
 interface CapTableProps {
   entity: EntityWithClasses;
   holdersWithHoldings: HolderWithHoldings[];
+  onSelectHolder?: (holderId: string) => void;
 }
 
-export function CapTable({ entity, holdersWithHoldings }: CapTableProps) {
+export function CapTable({ entity, holdersWithHoldings, onSelectHolder }: CapTableProps) {
   const classes = entity.equityClasses.filter((c) => c.isActive);
   const totals = computeTotals(holdersWithHoldings, classes);
   const committedCapitalTotal = entity.showCommittedCapital
@@ -77,6 +78,7 @@ export function CapTable({ entity, holdersWithHoldings }: CapTableProps) {
                 showCommittedCapital={entity.showCommittedCapital}
                 isEven={idx % 2 === 1}
                 scrolled={scrolled}
+                onSelect={onSelectHolder}
               />
             ))}
             <TotalsRow
@@ -102,6 +104,7 @@ function HolderRow({
   showCommittedCapital,
   isEven,
   scrolled,
+  onSelect,
 }: {
   hwh: HolderWithHoldings;
   classes: EquityClass[];
@@ -110,6 +113,7 @@ function HolderRow({
   showCommittedCapital: boolean;
   isEven: boolean;
   scrolled: boolean;
+  onSelect?: (holderId: string) => void;
 }) {
   const rowBg = isEven ? "bg-surface-alt/50" : "bg-white";
 
@@ -143,7 +147,8 @@ function HolderRow({
 
   return (
     <tr
-      className={`${rowBg} hover:bg-trust-blue/[0.04] transition-colors duration-150 group relative`}
+      onClick={() => onSelect?.(hwh.holder.id)}
+      className={`${rowBg} hover:bg-trust-blue/[0.04] transition-colors duration-150 group relative cursor-pointer`}
     >
       <td
         className={`sticky left-0 z-10 ${rowBg} group-hover:bg-trust-blue/[0.04] px-5 py-3 border-b border-border transition-all duration-150 ${scrolled ? "pinned-shadow" : ""}`}

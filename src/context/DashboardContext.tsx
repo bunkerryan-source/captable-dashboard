@@ -36,6 +36,7 @@ export interface DashboardState {
     | "entitySettings"
     | null;
   editingTransactionId: string | null;
+  selectedHolderId: string | null;
   asOfDate: string | null;
   loading: boolean;
   error: string | null;
@@ -67,7 +68,9 @@ export type DashboardAction =
   | { type: "SET_EDITING_TRANSACTION"; transactionId: string | null }
   | { type: "UPDATE_TRANSACTION"; transaction: TransactionWithAttachments }
   | { type: "DELETE_TRANSACTION"; transactionId: string }
-  | { type: "SET_AS_OF_DATE"; date: string | null };
+  | { type: "SET_AS_OF_DATE"; date: string | null }
+  | { type: "SELECT_HOLDER"; holderId: string }
+  | { type: "DESELECT_HOLDER" };
 
 // ── Reducer ──
 
@@ -94,7 +97,11 @@ function dashboardReducer(
       return { ...state, error: action.error, loading: false };
 
     case "TOGGLE_CHANGELOG":
-      return { ...state, changeLogOpen: !state.changeLogOpen };
+      return {
+        ...state,
+        changeLogOpen: !state.changeLogOpen,
+        selectedHolderId: state.changeLogOpen ? state.selectedHolderId : null,
+      };
 
     case "OPEN_MODAL":
       return { ...state, activeModal: action.modal };
@@ -162,6 +169,16 @@ function dashboardReducer(
     case "SET_AS_OF_DATE":
       return { ...state, asOfDate: action.date };
 
+    case "SELECT_HOLDER":
+      return {
+        ...state,
+        selectedHolderId: action.holderId,
+        changeLogOpen: false,
+      };
+
+    case "DESELECT_HOLDER":
+      return { ...state, selectedHolderId: null };
+
     default:
       return state;
   }
@@ -177,6 +194,7 @@ const initialState: DashboardState = {
   changeLogOpen: false,
   activeModal: null,
   editingTransactionId: null,
+  selectedHolderId: null,
   asOfDate: null,
   loading: true,
   error: null,

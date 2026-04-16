@@ -7,6 +7,7 @@ import { FooterBar } from "@/components/layout/FooterBar";
 import { MetadataRow } from "@/components/dashboard/MetadataRow";
 import { CapTable } from "@/components/dashboard/CapTable";
 import { ChangeLogPanel } from "@/components/changelog/ChangeLogPanel";
+import { HolderDetailPanel } from "@/components/holder-detail/HolderDetailPanel";
 import { RecordTransactionModal } from "@/components/modals/RecordTransactionModal";
 import { AddHolderModal } from "@/components/modals/AddHolderModal";
 import { EntitySetupModal } from "@/components/modals/EntitySetupModal";
@@ -155,7 +156,13 @@ function DashboardContent() {
         </div>
 
         <div className="animate-fade-in-up delay-150">
-          <CapTable entity={entity} holdersWithHoldings={holdersWithHoldings} />
+          <CapTable
+            entity={entity}
+            holdersWithHoldings={holdersWithHoldings}
+            onSelectHolder={(holderId) =>
+              dispatch({ type: "SELECT_HOLDER", holderId })
+            }
+          />
         </div>
 
         <div className="animate-fade-in-up delay-225">
@@ -164,6 +171,7 @@ function DashboardContent() {
       </main>
 
       <ChangeLogPanel transactions={transactions} />
+      <HolderDetailPanel />
       <RecordTransactionModal />
       <AddHolderModal />
       <EntitySetupModal />

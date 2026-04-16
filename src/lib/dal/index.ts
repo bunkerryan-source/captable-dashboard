@@ -1,6 +1,6 @@
 export { fetchEntitiesWithClasses, addEntity, updateEntity } from "./entities";
 export { fetchHolders, addHolder } from "./holders";
-export { fetchHoldings, upsertHoldings } from "./holdings";
+export { fetchHoldings, upsertHoldings, upsertHoldingsDelta } from "./holdings";
 export {
   fetchTransactionsWithAttachments,
   recordTransaction,
