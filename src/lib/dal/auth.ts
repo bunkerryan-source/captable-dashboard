@@ -13,7 +13,11 @@ export async function signIn(email: string, password: string) {
 
 export async function signOut() {
   const supabase = createClient();
-  const { error } = await supabase.auth.signOut();
+  // scope: 'local' clears only this browser's session cookies — no network
+  // call. The global default tries to revoke the refresh token server-side,
+  // which can hang or fail when the session is already stale and leaves the
+  // user unable to sign out.
+  const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) throw error;
 }
 

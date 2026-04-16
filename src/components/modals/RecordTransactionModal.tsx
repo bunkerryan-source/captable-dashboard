@@ -23,6 +23,8 @@ import {
   updateTransaction as dalUpdateTransaction,
   addHolder as dalAddHolder,
   uploadAttachments as dalUploadAttachments,
+  upsertHoldingsDelta as dalUpsertHoldingsDelta,
+  fetchHoldings as dalFetchHoldings,
 } from "@/lib/dal";
 import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
 import type { Holder, HoldingDelta } from "@/data/types";
@@ -41,7 +43,7 @@ const TX_TYPE_OPTIONS: { value: TxType; label: string }[] = [
 export function RecordTransactionModal() {
   const { isOpen, close } = useModal("recordTransaction");
   const { entity } = useSelectedEntity();
-  const { holders, transactions, editingTransactionId } = useDashboard();
+  const { entities, holders, transactions, editingTransactionId } = useDashboard();
   const dispatch = useDashboardDispatch();
   const { displayName } = useAuth();
 
@@ -150,22 +152,26 @@ export function RecordTransactionModal() {
     return isNaN(num) ? null : num;
   }
 
-  function buildHoldingsDeltas(): HoldingDelta[] {
+  function computeDeltas(
+    type: TxType,
+    metadata: Record<string, string>
+  ): HoldingDelta[] {
     if (!entity) return [];
-    const amount = parseNumericInput(fieldValues.amount);
+    const amount = parseNumericInput(metadata.amount);
 
-    switch (txType) {
+    switch (type) {
       case "issuance": {
-        if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
+        if (!metadata.holder || !metadata.equityClass || amount === null)
           return [];
 
         return [
           {
             entityId: entity.id,
-            holderId: fieldValues.holder,
-            equityClassId: fieldValues.equityClass,
+            holderId: metadata.holder,
+            equityClassId: metadata.equityClass,
             amountDelta: amount,
-            committedCapital: parseNumericInput(fieldValues.capitalContribution) ?? undefined,
+            committedCapital:
+              parseNumericInput(metadata.capitalContribution) ?? undefined,
             holderRole: undefined,
           },
         ];
@@ -175,9 +181,9 @@ export function RecordTransactionModal() {
       case "sale":
       case "estate_transfer": {
         if (
-          !fieldValues.fromHolder ||
-          !fieldValues.toHolder ||
-          !fieldValues.equityClass ||
+          !metadata.fromHolder ||
+          !metadata.toHolder ||
+          !metadata.equityClass ||
           amount === null
         )
           return [];
@@ -185,28 +191,28 @@ export function RecordTransactionModal() {
         return [
           {
             entityId: entity.id,
-            holderId: fieldValues.fromHolder,
-            equityClassId: fieldValues.equityClass,
+            holderId: metadata.fromHolder,
+            equityClassId: metadata.equityClass,
             amountDelta: -amount,
           },
           {
             entityId: entity.id,
-            holderId: fieldValues.toHolder,
-            equityClassId: fieldValues.equityClass,
+            holderId: metadata.toHolder,
+            equityClassId: metadata.equityClass,
             amountDelta: amount,
           },
         ];
       }
 
       case "redemption": {
-        if (!fieldValues.holder || !fieldValues.equityClass || amount === null)
+        if (!metadata.holder || !metadata.equityClass || amount === null)
           return [];
 
         return [
           {
             entityId: entity.id,
-            holderId: fieldValues.holder,
-            equityClassId: fieldValues.equityClass,
+            holderId: metadata.holder,
+            equityClassId: metadata.equityClass,
             amountDelta: -amount,
           },
         ];
@@ -217,6 +223,10 @@ export function RecordTransactionModal() {
     }
   }
 
+  function buildHoldingsDeltas(): HoldingDelta[] {
+    return computeDeltas(txType, fieldValues);
+  }
+
   async function handleSubmit() {
     if (!description.trim()) return;
     setSubmitting(true);
@@ -224,14 +234,67 @@ export function RecordTransactionModal() {
 
     try {
       if (isEditing && editingTransactionId) {
-        // Update existing transaction
+        // Find the original transaction so we can reverse its holdings impact
+        const original = transactions.find((t) => t.id === editingTransactionId);
+
+        // Update the transaction row
         const updated = await dalUpdateTransaction(editingTransactionId, {
           transactionType: txType,
           effectiveDate,
           description: description.trim(),
           metadata: { ...fieldValues },
         });
-        dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
+
+        // Apply reversal of old deltas + new deltas so holdings reflect the edit
+        if (original) {
+          const oldDeltas = computeDeltas(
+            original.transactionType as TxType,
+            (original.metadata as Record<string, string>) ?? {}
+          );
+          const newDeltas = computeDeltas(txType, fieldValues);
+          const reversal: HoldingDelta[] = oldDeltas.map((d) => ({
+            ...d,
+            amountDelta: -d.amountDelta,
+            // Don't touch committedCapital/holderRole on reversal — the RPC
+            // preserves existing values via COALESCE when undefined.
+            committedCapital: undefined,
+            holderRole: undefined,
+          }));
+
+          if (reversal.length > 0 || newDeltas.length > 0) {
+            await dalUpsertHoldingsDelta([...reversal, ...newDeltas]);
+            // Re-fetch holdings from DB to guarantee state matches server,
+            // since the RPC returns only affected rows and merging by id
+            // can miss rows whose amount fell to zero etc.
+            const fresh = await dalFetchHoldings();
+            dispatch({
+              type: "INIT_DATA",
+              entities: entities,
+              holders: holders,
+              holdings: fresh,
+              transactions: transactions.map((t) =>
+                t.id === updated.id ? updated : t
+              ),
+            });
+          } else {
+            dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
+          }
+        } else {
+          dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
+        }
+
+        // Upload any newly-attached files on edit
+        if (selectedFiles.length > 0) {
+          const newAttachments = await dalUploadAttachments(
+            editingTransactionId,
+            selectedFiles
+          );
+          const merged = {
+            ...updated,
+            attachments: [...updated.attachments, ...newAttachments],
+          };
+          dispatch({ type: "UPDATE_TRANSACTION", transaction: merged });
+        }
       } else {
         // Create new transaction + update holdings
         const result = await dalRecordTransaction(

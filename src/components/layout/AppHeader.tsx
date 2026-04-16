@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { EntitySelector } from "./EntitySelector";
 import { Button } from "@/components/ui/Button";
 import { InviteUserModal } from "@/components/modals/InviteUserModal";
@@ -12,7 +11,6 @@ import { signOut } from "@/lib/dal";
 export function AppHeader() {
   const dispatch = useDashboardDispatch();
   const { user, role, displayName } = useAuth();
-  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -42,7 +40,9 @@ export function AppHeader() {
     } catch {
       // Always redirect even if signOut fails
     }
-    router.push("/login");
+    // Full reload (not router.push) so all client state resets and the
+    // middleware sees cleared cookies on a fresh request.
+    window.location.href = "/login";
   }
 
   return (

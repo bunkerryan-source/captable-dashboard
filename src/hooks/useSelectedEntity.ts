@@ -68,6 +68,15 @@ export function useSelectedEntity(): SelectedEntityData {
           b.role?.toLowerCase().includes("managing member");
         if (aIsGP && !bIsGP) return -1;
         if (!aIsGP && bIsGP) return 1;
+
+        // Sort by total position across all classes, descending.
+        // Uses raw amount — for entities with percentage-type classes the
+        // value is the percentage itself, which still orders correctly.
+        const sum = (h: HolderWithHoldings) =>
+          h.holdings.reduce((acc, hld) => acc + (hld.amount ?? 0), 0);
+        const diff = sum(b) - sum(a);
+        if (diff !== 0) return diff;
+        // Tiebreak alphabetically for stable ordering
         return a.holder.name.localeCompare(b.holder.name);
       });
 

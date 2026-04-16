@@ -1,6 +1,25 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/**
+ * Deletes all Supabase auth cookies on the given response. Called when
+ * the session is broken (bad refresh token, malformed cookie, etc.) so
+ * the browser stops sending stuck cookies on every subsequent request.
+ */
+function clearSupabaseCookies(
+  request: NextRequest,
+  response: NextResponse
+): void {
+  for (const cookie of request.cookies.getAll()) {
+    if (cookie.name.startsWith("sb-")) {
+      response.cookies.set(cookie.name, "", {
+        maxAge: 0,
+        path: "/",
+      });
+    }
+  }
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -28,13 +47,18 @@ export async function updateSession(request: NextRequest) {
 
     // Refresh the session — this is critical for keeping the auth token alive.
     // Wrapped in try/catch: if getUser() throws (corrupt cookies, network
-    // error), treat the user as unauthenticated rather than crashing.
+    // error), treat the user as unauthenticated AND clear the bad cookies so
+    // the browser doesn't keep resending them on every request.
     let user = null;
+    let authFailed = false;
     try {
-      const { data } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getUser();
       user = data.user;
+      // getUser returns an error (rather than throwing) for things like
+      // "Invalid Refresh Token". Treat this as a broken session too.
+      if (error) authFailed = true;
     } catch {
-      // Treat any auth error as "not logged in"
+      authFailed = true;
     }
 
     // Redirect unauthenticated users to /login (except /login and /auth routes)
@@ -52,6 +76,12 @@ export async function updateSession(request: NextRequest) {
       supabaseResponse.cookies.getAll().forEach((cookie) => {
         redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
       });
+      // If auth actually failed (corrupt/expired token), proactively clear
+      // the sb-* cookies so the browser stops sending them. This prevents
+      // the "clear site data to load the site" failure mode.
+      if (authFailed) {
+        clearSupabaseCookies(request, redirectResponse);
+      }
       return redirectResponse;
     }
 
@@ -66,18 +96,27 @@ export async function updateSession(request: NextRequest) {
       return redirectResponse;
     }
 
+    // On /login or /auth with a failed session, strip the bad cookies so
+    // the login page isn't fighting broken state.
+    if (authFailed) {
+      clearSupabaseCookies(request, supabaseResponse);
+    }
+
     return supabaseResponse;
   } catch {
     // If anything in the middleware throws (corrupt cookies, Supabase client
-    // creation failure, etc.), redirect to login rather than returning a 500.
+    // creation failure, etc.), redirect to login and nuke the auth cookies.
     if (
       request.nextUrl.pathname.startsWith("/login") ||
       request.nextUrl.pathname.startsWith("/auth")
     ) {
+      clearSupabaseCookies(request, supabaseResponse);
       return supabaseResponse;
     }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    clearSupabaseCookies(request, redirectResponse);
+    return redirectResponse;
   }
 }
