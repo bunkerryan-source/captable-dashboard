@@ -155,6 +155,12 @@ src/
 
 ## Known Issues / TODO
 
+- **🐞 OPEN BUG — Sign out link does nothing.** Clicking "Sign out" in the user menu has no visible effect — user stays on the dashboard, session not cleared. **First fix attempt (Phase 5, commit `638d594`) did not resolve it** — changed `signOut()` to `{ scope: 'local' }` and the handler now does `window.location.href = '/login'` after the await. **Suspect areas to investigate next time:**
+  - The menu has an outside-click-to-close handler (`menuRef` in `AppHeader.tsx`). The sign-out `<button>` is inside that menu, but the mousedown-based dismissal may be swallowing the click event before the button's onClick fires. Try changing outside-click detection to mouseup OR check `e.target` before closing. Alternative: move Sign Out outside the menu or test with `onMouseDown` instead of `onClick`.
+  - `signOut({ scope: 'local' })` may not actually clear cookies synchronously — the await resolves but the browser cookie store update is asynchronous. If `window.location.href` fires before cookies are flushed, middleware sees valid cookies, identifies the user, and the `user && /login` branch redirects back to `/`. User bounces straight back to the dashboard so it *looks* like nothing happened. **Verify:** check Network tab on sign-out click — should see navigation to `/login` that doesn't redirect back to `/`.
+  - Multiple `createClient()` instances: AppHeader's `signOut()` uses a fresh client; AuthContext has its own. Cookies are shared so this should still work, but worth verifying the actual Supabase JS behavior here with `scope: 'local'`.
+  - Alternative fix to try first: explicitly delete `sb-*` cookies client-side before navigating, instead of relying on `signOut()`. Mirror the middleware's `clearSupabaseCookies` logic with `document.cookie = 'sb-X=; Max-Age=0; path=/'`.
+  - **Ryan's current workaround:** Clear site data manually, or close the tab entirely.
 - **🐞 OPEN BUG — Edit transaction doesn't update cap table holdings.** When an admin edits a transaction from the change log (e.g. fixing a share count), the transaction record itself updates correctly but the cap table still reflects the original numbers. **First fix attempt (Phase 5, commit `638d594`) did not resolve it** — the intended logic reverses the original transaction's deltas and applies new deltas via `upsert_holding_delta`, but users still see stale cap table data after edit. **Suspect areas to investigate next time:**
   - The `computeDeltas()` call reads `original.metadata` from the in-memory `transactions` array. If the original metadata stored as JSONB contains non-string values or different key casing than expected, the deltas could be empty/wrong.
   - The `INIT_DATA` dispatch in the edit path uses `entities` and `holders` from current context state (not a fresh fetch), which is correct, but `dalFetchHoldings()` is awaited right before — if the RPC commit hasn't propagated to read replicas yet, we'd fetch stale data. (Unlikely on Supabase single-region but worth ruling out.)
@@ -191,6 +197,7 @@ src/
 
 ## Next Steps
 
-1. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Highest priority — data-integrity adjacent. The edit UI updates the transaction row but the cap table still shows pre-edit numbers.
-2. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
-3. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
+1. **🐞 Fix the sign-out bug** (see Known Issues). Clicking Sign out does nothing; users can't leave without clearing site data.
+2. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Data-integrity adjacent — edit UI updates the transaction row but the cap table still shows pre-edit numbers.
+3. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
+4. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
