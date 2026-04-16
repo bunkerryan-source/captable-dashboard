@@ -47,15 +47,25 @@ export async function getUserProfile(userId: string) {
   };
 }
 
+export interface InviteResult {
+  inviteUrl: string;
+  isExisting: boolean;
+}
+
 export async function inviteUser(
   email: string,
   role: UserRole,
   displayName?: string
-) {
+): Promise<InviteResult> {
   const supabase = createClient();
 
+  // Pass the current site URL so the generated link redirects to this
+  // deployment (works in local dev, preview, and prod without config).
+  const siteUrl =
+    typeof window !== "undefined" ? window.location.origin : undefined;
+
   const { data, error } = await supabase.functions.invoke("invite-user", {
-    body: { email, role, displayName },
+    body: { email, role, displayName, siteUrl },
   });
 
   if (error) {
@@ -71,4 +81,13 @@ export async function inviteUser(
   if (data?.error) {
     throw new Error(data.error);
   }
+
+  if (!data?.inviteUrl) {
+    throw new Error("Invite link not returned by server");
+  }
+
+  return {
+    inviteUrl: data.inviteUrl as string,
+    isExisting: !!data.isExisting,
+  };
 }
