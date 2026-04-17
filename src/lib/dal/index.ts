@@ -12,6 +12,7 @@ export {
   signOut,
   getCurrentUser,
   getUserProfile,
+  markPasswordChanged,
   inviteUser,
 } from "./auth";
 export { uploadAttachments, getAttachmentUrl } from "./attachments";

@@ -43,6 +43,7 @@ export async function getUserProfile(userId: string) {
     email: data.email,
     role: data.role as UserRole,
     displayName: data.display_name,
+    mustChangePassword: data.must_change_password ?? false,
     createdAt: data.created_at,
   };
 }
@@ -90,4 +91,10 @@ export async function inviteUser(
     inviteUrl: data.inviteUrl as string,
     isExisting: !!data.isExisting,
   };
+}
+
+export async function markPasswordChanged(): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.rpc("mark_password_changed");
+  if (error) throw error;
 }
