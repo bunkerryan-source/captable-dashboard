@@ -61,11 +61,17 @@ export async function updateSession(request: NextRequest) {
       authFailed = true;
     }
 
-    // Redirect unauthenticated users to /login (except /login and /auth routes)
+    // Redirect unauthenticated users to /login. Exceptions:
+    // - /login itself
+    // - /forgot-password: user needs to reach it before signing in
+    // - /set-password: the password-reset link from email lands here
+    //   with a recovery-token session that middleware doesn't see yet;
+    //   bouncing it to /login would break the reset flow
     if (
       !user &&
       !request.nextUrl.pathname.startsWith("/login") &&
-      !request.nextUrl.pathname.startsWith("/auth")
+      !request.nextUrl.pathname.startsWith("/forgot-password") &&
+      !request.nextUrl.pathname.startsWith("/set-password")
     ) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
@@ -96,8 +102,9 @@ export async function updateSession(request: NextRequest) {
       return redirectResponse;
     }
 
-    // On /login or /auth with a failed session, strip the bad cookies so
-    // the login page isn't fighting broken state.
+    // On /login, /forgot-password, or /set-password with a failed
+    // session, strip bad cookies so these pages aren't fighting broken
+    // state.
     if (authFailed) {
       clearSupabaseCookies(request, supabaseResponse);
     }
@@ -108,7 +115,8 @@ export async function updateSession(request: NextRequest) {
     // creation failure, etc.), redirect to login and nuke the auth cookies.
     if (
       request.nextUrl.pathname.startsWith("/login") ||
-      request.nextUrl.pathname.startsWith("/auth")
+      request.nextUrl.pathname.startsWith("/forgot-password") ||
+      request.nextUrl.pathname.startsWith("/set-password")
     ) {
       clearSupabaseCookies(request, supabaseResponse);
       return supabaseResponse;
