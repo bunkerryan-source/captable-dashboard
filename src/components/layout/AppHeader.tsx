@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { EntitySelector } from "./EntitySelector";
 import { Button } from "@/components/ui/Button";
-import { InviteUserModal } from "@/components/modals/InviteUserModal";
 import { useDashboardDispatch } from "@/context/DashboardContext";
 import { useAuth } from "@/context/AuthContext";
 import { signOut } from "@/lib/dal";
@@ -12,7 +11,6 @@ export function AppHeader() {
   const dispatch = useDashboardDispatch();
   const { user, role, displayName } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu on outside click
@@ -46,8 +44,7 @@ export function AppHeader() {
   }
 
   return (
-    <>
-      <header className="h-14 bg-navy flex items-center px-4 md:px-5 gap-3 md:gap-4 shrink-0">
+    <header className="h-14 bg-navy flex items-center px-4 md:px-5 gap-3 md:gap-4 shrink-0">
         {/* Logo */}
         <img
           src="/abplogo.png"
@@ -121,18 +118,6 @@ export function AppHeader() {
                   </span>
                 </div>
 
-                {role === "admin" && (
-                  <button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setInviteOpen(true);
-                    }}
-                    className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-surface transition-colors cursor-pointer"
-                  >
-                    Invite user
-                  </button>
-                )}
-
                 <button
                   onClick={handleSignOut}
                   className="w-full text-left px-3 py-2 text-[13px] text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
@@ -143,9 +128,6 @@ export function AppHeader() {
             )}
           </div>
         </div>
-      </header>
-
-      <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
-    </>
+    </header>
   );
 }

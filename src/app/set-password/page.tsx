@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { markPasswordChanged } from "@/lib/dal";
 
 export default function SetPasswordPage() {
   const router = useRouter();
@@ -44,16 +43,52 @@ export default function SetPasswordPage() {
 
     setLoading(true);
     try {
+      // Bypass supabase.auth.updateUser — it hangs on its internal
+      // post-success session refresh / cookie write in this app's
+      // @supabase/ssr setup. Hit the Auth REST API directly instead.
+      // A Postgres trigger (on_auth_user_password_change) flips
+      // must_change_password = false when auth.users.encrypted_password
+      // changes, so no follow-up RPC is needed.
       const supabase = createClient();
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-      });
-      if (updateError) throw updateError;
-      await markPasswordChanged();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("No active session — please sign in again");
+      }
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/user`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ password }),
+        }
+      );
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as {
+          msg?: string;
+          message?: string;
+          error_description?: string;
+        };
+        throw new Error(
+          body.msg ||
+            body.message ||
+            body.error_description ||
+            "Failed to update password"
+        );
+      }
+
+      // Full reload so AuthContext reinitializes with the fresh
+      // user_profiles row (must_change_password = false).
       window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to set password");
-    } finally {
       setLoading(false);
     }
   }
