@@ -4,7 +4,7 @@
 
 Web-based cap table dashboard for ABP Capital. Tracks equity ownership across ~20-30 legal entities with a complete audit trail of transactions (gifts, sales, redemptions, transfers, issuances, corrections). Replaces spreadsheet-based tracking.
 
-**Current phase:** Phase 6 complete — live on Vercel with Supabase backend, manual user onboarding (admin creates user in Supabase, forced password change on first login), historical snapshots, CSV export, file attachments (add on edit too), atomic holdings updates, rich change log, holder detail sidebar, cap table sorted by position, and auth-resilient middleware that clears broken cookies automatically.
+**Current phase:** Phase 7 complete — holdings are now rebuilt from the transaction log on every edit or delete (server-side RPC), so the cap table always matches what's in the change log. Prior phases still in place: manual user onboarding, historical snapshots, CSV export, file attachments (add on edit too), rich change log, holder detail sidebar, cap table sorted by position, and auth-resilient middleware that clears broken cookies automatically.
 
 ## Deployment
 
@@ -108,7 +108,8 @@ src/
 - `user_profiles` — links auth.users to app roles (admin/editor) and `must_change_password` flag
 
 **RPC functions:**
-- `upsert_holding_delta(p_entity_id, p_holder_id, p_equity_class_id, p_amount_delta, p_committed_capital?, p_holder_role?)` — Atomic upsert that adds `p_amount_delta` to existing holding amount (or inserts if new). Uses `COALESCE` to preserve existing `committed_capital` and `holder_role` when not provided.
+- `upsert_holding_delta(p_entity_id, p_holder_id, p_equity_class_id, p_amount_delta, p_committed_capital?, p_holder_role?)` — Atomic upsert that adds `p_amount_delta` to existing holding amount (or inserts if new). Uses `COALESCE` to preserve existing `committed_capital` and `holder_role` when not provided. Used only by the create-transaction path.
+- `rebuild_entity_holdings(p_entity_id)` — Atomically recomputes all holdings for an entity by deleting its holdings and replaying every transaction for that entity (chronological). Called on edit and delete so the cap table is always derived from the transaction log. Idempotent: running it against the current DB produces identical holdings.
 - `has_users()` — Returns boolean, used during first-user setup flow.
 
 **Triggers:**
@@ -156,18 +157,16 @@ src/
 
 **Pinned first column:** Sticky left-0 with explicit background colors and scroll-triggered box-shadow.
 
-**Atomic holdings updates:** Holdings are updated via `upsert_holding_delta` Supabase RPC that atomically increments amounts server-side. `RecordTransactionModal` sends delta amounts (not cumulative), eliminating stale-state bugs from rapid sequential transactions. The `HoldingDelta` type carries `amountDelta` instead of absolute `amount`.
+**Holdings are derived from the transaction log, not authoritative themselves.** The `holdings` table is a materialized cache. Two code paths write to it:
+1. **Create** (`RecordTransactionModal` → `recordTransaction` DAL): uses `upsert_holding_delta` to atomically apply the new transaction's deltas. Works because there's no prior state to reconcile.
+2. **Edit / Delete** (`RecordTransactionModal` / `ChangeLogEntry` → `rebuild_entity_holdings` RPC): the server deletes all holdings for the entity and replays every transaction. This is the only way to guarantee the cap table matches the change log after an edit, because the prior "reverse old deltas + apply new deltas" client-side approach was brittle across closure/dispatch/RPC-undefined edge cases.
+
+The `HoldingDelta` type (used only on the create path) carries `amountDelta` instead of absolute `amount`.
 
 **Mutual exclusion panels:** The holder detail sidebar and change log panel cannot be open simultaneously. `SELECT_HOLDER` closes the change log; `TOGGLE_CHANGELOG` deselects any selected holder. Both use the same sliding panel pattern (420px wide, right-0, z-40).
 
 ## Known Issues / TODO
 
-- **🐞 OPEN BUG — Edit transaction doesn't update cap table holdings.** When an admin edits a transaction from the change log (e.g. fixing a share count typo), the transaction row itself updates correctly but the cap table keeps showing the original numbers. **First fix attempt (commit `638d594`) did not resolve it** — the intended logic reverses the original transaction's deltas and applies new deltas via `upsert_holding_delta`, but users still see stale cap table data after edit. **Suspect areas to investigate next session:**
-  - `computeDeltas()` reads `original.metadata` from the in-memory `transactions` array. If the original metadata stored as JSONB contains non-string values or different key casing than the builder expects, the deltas could be empty/wrong.
-  - The `INIT_DATA` dispatch in the edit path uses `entities`/`holders` from current context state (not a fresh fetch), which is correct, but `dalFetchHoldings()` runs right before — if Postgres read-after-write ordering lags here (unlikely on Supabase single-region but worth ruling out), we'd fetch stale data.
-  - Edit-path branch may be executing the `dispatch({ type: "UPDATE_TRANSACTION" })` path instead of the `INIT_DATA` path if `oldDeltas.length === 0 && newDeltas.length === 0`. Check whether a transaction being edited has metadata that produces empty deltas (e.g., missing `holder` key).
-  - Verify the RPC is actually receiving and processing the reversal deltas — add console.log in the handler or watch the network tab on an edit.
-  - **Ryan's current workaround:** Redeem the holder's entire position via a new transaction, delete the original (wrong) transaction from the log, then create a new transaction for the correct amount.
 - **🐞 OPEN BUG — Sign out link does nothing.** Clicking "Sign out" in the user menu has no visible effect — user stays on the dashboard, session not cleared. **First fix attempt (commit `638d594`) did not resolve it** — changed `signOut()` to `{ scope: 'local' }` and the handler now does `window.location.href = '/login'` after the await. **Suspect areas to investigate next time:**
   - The menu has an outside-click-to-close handler (`menuRef` in `AppHeader.tsx`). The sign-out `<button>` is inside that menu, but the mousedown-based dismissal may be swallowing the click event before the button's onClick fires. Try changing outside-click detection to mouseup OR check `e.target` before closing.
   - `signOut({ scope: 'local' })` may not clear cookies synchronously — the await resolves but the browser cookie store update is async. If `window.location.href` fires before cookies flush, middleware sees valid cookies and bounces back to `/`. **Verify:** check Network tab on sign-out click — should see navigation to `/login` that doesn't redirect back to `/`.
@@ -199,6 +198,11 @@ src/
 - **Cap table sort by position** — Holders now ordered by total amount across all equity classes, descending. GP / managing member still pinned to top. Alpha tiebreak.
 - **Attachments on transaction edit** — The edit modal accepts file uploads too. Appends new attachments to the existing list rather than replacing. Useful when you log a transaction and want to add supporting docs later.
 
+## Completed Features (Phase 7) — 2026-04-17
+
+- **Edit / delete now rebuild holdings from the transaction log.** New Postgres RPC `rebuild_entity_holdings(p_entity_id)` atomically deletes the entity's holdings and replays every transaction. Called on transaction edit ([src/components/modals/RecordTransactionModal.tsx](src/components/modals/RecordTransactionModal.tsx)) and delete ([src/components/changelog/ChangeLogEntry.tsx](src/components/changelog/ChangeLogEntry.tsx)). DAL helper: `rebuildEntityHoldings()` in [src/lib/dal/holdings.ts](src/lib/dal/holdings.ts). Resolves the edit-doesn't-update-cap-table bug and the previously-unreported related bug where delete also left holdings stale. Verified idempotent against live data: running the rebuild on every entity produces identical holdings to what was in the DB.
+- **Workaround retired:** the "redeem → delete → reissue" dance is no longer needed — editing a transaction is now the correct flow for fixing a share count typo.
+
 ## Completed Features (Phase 6) — 2026-04-17
 
 - **Manual user onboarding** replaces the old copy-link invite flow entirely. Admin adds users in Supabase Dashboard with a temp password; the `handle_new_user()` trigger auto-creates the `user_profiles` row with `must_change_password = true`. Plan: [docs/superpowers/plans/2026-04-17-manual-user-onboarding.md](docs/superpowers/plans/2026-04-17-manual-user-onboarding.md). Spec: [docs/superpowers/specs/2026-04-17-manual-user-onboarding-design.md](docs/superpowers/specs/2026-04-17-manual-user-onboarding-design.md).
@@ -210,8 +214,7 @@ src/
 
 ## Next Steps
 
-1. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Data-integrity adjacent — when an admin fixes a wrong share count from the change log, the transaction row updates but the cap table continues showing the pre-edit numbers. Top priority because it affects the accuracy of what users see.
-2. **🐞 Fix the sign-out bug** (see Known Issues). Clicking Sign out does nothing; users can't leave without clearing site data.
-3. **Restore Vercel auto-deploy** — Disconnect/reconnect Git integration in Vercel project settings.
-4. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
-5. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
+1. **🐞 Fix the sign-out bug** (see Known Issues). Clicking Sign out does nothing; users can't leave without clearing site data.
+2. **Restore Vercel auto-deploy** — Disconnect/reconnect Git integration in Vercel project settings.
+3. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
+4. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
