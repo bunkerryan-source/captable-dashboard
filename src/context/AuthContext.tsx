@@ -16,6 +16,7 @@ interface AuthState {
   user: User | null;
   role: UserRole | null;
   displayName: string | null;
+  mustChangePassword: boolean;
   loading: boolean;
 }
 
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthState>({
   user: null,
   role: null,
   displayName: null,
+  mustChangePassword: false,
   loading: true,
 });
 
@@ -36,20 +38,27 @@ async function resolveAuthState(
     if (user) {
       const { data } = await supabase
         .from("user_profiles")
-        .select("role, display_name")
+        .select("role, display_name, must_change_password")
         .eq("id", user.id)
         .single();
       return {
         user,
         role: (data?.role as UserRole) ?? "editor",
         displayName: data?.display_name ?? user.email ?? null,
+        mustChangePassword: data?.must_change_password ?? false,
         loading: false,
       };
     }
   } catch {
     // Treat any error as unauthenticated
   }
-  return { user: null, role: null, displayName: null, loading: false };
+  return {
+    user: null,
+    role: null,
+    displayName: null,
+    mustChangePassword: false,
+    loading: false,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -57,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: null,
     role: null,
     displayName: null,
+    mustChangePassword: false,
     loading: true,
   });
   const initRef = useRef(false);
@@ -83,17 +93,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         const { data } = await supabase
           .from("user_profiles")
-          .select("role, display_name")
+          .select("role, display_name, must_change_password")
           .eq("id", session.user.id)
           .single();
         setState({
           user: session.user,
           role: (data?.role as UserRole) ?? "editor",
           displayName: data?.display_name ?? session.user.email ?? null,
+          mustChangePassword: data?.must_change_password ?? false,
           loading: false,
         });
       } else {
-        setState({ user: null, role: null, displayName: null, loading: false });
+        setState({
+          user: null,
+          role: null,
+          displayName: null,
+          mustChangePassword: false,
+          loading: false,
+        });
       }
     });
 
