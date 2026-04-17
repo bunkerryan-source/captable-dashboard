@@ -161,6 +161,15 @@ export default function LoginPage() {
                   ? "Create Account"
                   : "Sign In"}
             </button>
+
+            {!isSetup && (
+              <a
+                href="/forgot-password"
+                className="block text-center text-[13px] text-trust-blue hover:text-pro-blue transition-colors"
+              >
+                Forgot password?
+              </a>
+            )}
           </form>
         </div>
 
