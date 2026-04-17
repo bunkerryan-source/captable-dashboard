@@ -27,6 +27,17 @@ export async function upsertHoldings(
   return (data ?? []).map(mapHolding);
 }
 
+export async function rebuildEntityHoldings(
+  entityId: string
+): Promise<Holding[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("rebuild_entity_holdings", {
+    p_entity_id: entityId,
+  });
+  if (error) throw error;
+  return (data ?? []).map(mapHolding);
+}
+
 export async function upsertHoldingsDelta(
   deltas: import("@/data/types").HoldingDelta[]
 ): Promise<Holding[]> {

@@ -23,7 +23,7 @@ import {
   updateTransaction as dalUpdateTransaction,
   addHolder as dalAddHolder,
   uploadAttachments as dalUploadAttachments,
-  upsertHoldingsDelta as dalUpsertHoldingsDelta,
+  rebuildEntityHoldings as dalRebuildEntityHoldings,
   fetchHoldings as dalFetchHoldings,
 } from "@/lib/dal";
 import { HOLDER_TYPE_OPTIONS } from "@/lib/constants";
@@ -234,10 +234,6 @@ export function RecordTransactionModal() {
 
     try {
       if (isEditing && editingTransactionId) {
-        // Find the original transaction so we can reverse its holdings impact
-        const original = transactions.find((t) => t.id === editingTransactionId);
-
-        // Update the transaction row
         const updated = await dalUpdateTransaction(editingTransactionId, {
           transactionType: txType,
           effectiveDate,
@@ -245,43 +241,21 @@ export function RecordTransactionModal() {
           metadata: { ...fieldValues },
         });
 
-        // Apply reversal of old deltas + new deltas so holdings reflect the edit
-        if (original) {
-          const oldDeltas = computeDeltas(
-            original.transactionType as TxType,
-            (original.metadata as Record<string, string>) ?? {}
-          );
-          const newDeltas = computeDeltas(txType, fieldValues);
-          const reversal: HoldingDelta[] = oldDeltas.map((d) => ({
-            ...d,
-            amountDelta: -d.amountDelta,
-            // Don't touch committedCapital/holderRole on reversal — the RPC
-            // preserves existing values via COALESCE when undefined.
-            committedCapital: undefined,
-            holderRole: undefined,
-          }));
+        // Rebuild this entity's holdings from its transaction log on the
+        // server. Source of truth is the log, so the cap table can't drift
+        // from what the user entered.
+        await dalRebuildEntityHoldings(entity!.id);
+        const fresh = await dalFetchHoldings();
 
-          if (reversal.length > 0 || newDeltas.length > 0) {
-            await dalUpsertHoldingsDelta([...reversal, ...newDeltas]);
-            // Re-fetch holdings from DB to guarantee state matches server,
-            // since the RPC returns only affected rows and merging by id
-            // can miss rows whose amount fell to zero etc.
-            const fresh = await dalFetchHoldings();
-            dispatch({
-              type: "INIT_DATA",
-              entities: entities,
-              holders: holders,
-              holdings: fresh,
-              transactions: transactions.map((t) =>
-                t.id === updated.id ? updated : t
-              ),
-            });
-          } else {
-            dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
-          }
-        } else {
-          dispatch({ type: "UPDATE_TRANSACTION", transaction: updated });
-        }
+        dispatch({
+          type: "INIT_DATA",
+          entities,
+          holders,
+          holdings: fresh,
+          transactions: transactions.map((t) =>
+            t.id === updated.id ? updated : t
+          ),
+        });
 
         // Upload any newly-attached files on edit
         if (selectedFiles.length > 0) {

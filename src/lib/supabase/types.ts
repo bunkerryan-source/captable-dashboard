@@ -276,6 +276,24 @@ export type Database = {
     }
     Functions: {
       has_users: { Args: never; Returns: boolean }
+      rebuild_entity_holdings: {
+        Args: { p_entity_id: string }
+        Returns: {
+          amount: number | null
+          committed_capital: number | null
+          entity_id: string
+          equity_class_id: string
+          holder_id: string
+          holder_role: string | null
+          id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "holdings"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       upsert_holding_delta: {
         Args: {
           p_amount_delta: number

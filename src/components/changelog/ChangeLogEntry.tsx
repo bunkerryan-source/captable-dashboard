@@ -5,11 +5,13 @@ import { TransactionBadge } from "./TransactionBadge";
 import { formatDate } from "@/lib/formatters";
 import { formatTransactionSummary } from "@/lib/formatTransactionSummary";
 import { Button } from "@/components/ui/Button";
-import { useDashboardDispatch } from "@/context/DashboardContext";
+import { useDashboard, useDashboardDispatch } from "@/context/DashboardContext";
 import { useAuth } from "@/context/AuthContext";
 import {
   deleteTransaction as dalDeleteTransaction,
   getAttachmentUrl,
+  rebuildEntityHoldings as dalRebuildEntityHoldings,
+  fetchHoldings as dalFetchHoldings,
 } from "@/lib/dal";
 import type { TransactionWithAttachments, Holder, EquityClass } from "@/data/types";
 
@@ -21,6 +23,7 @@ interface ChangeLogEntryProps {
 
 export function ChangeLogEntry({ transaction, holders, equityClasses }: ChangeLogEntryProps) {
   const dispatch = useDashboardDispatch();
+  const { entities, holders: allHolders, transactions } = useDashboard();
   const { role } = useAuth();
   const isAdmin = role === "admin";
 
@@ -43,7 +46,15 @@ export function ChangeLogEntry({ transaction, holders, equityClasses }: ChangeLo
     setError(null);
     try {
       await dalDeleteTransaction(transaction.id);
-      dispatch({ type: "DELETE_TRANSACTION", transactionId: transaction.id });
+      await dalRebuildEntityHoldings(transaction.entityId);
+      const fresh = await dalFetchHoldings();
+      dispatch({
+        type: "INIT_DATA",
+        entities,
+        holders: allHolders,
+        holdings: fresh,
+        transactions: transactions.filter((t) => t.id !== transaction.id),
+      });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to delete transaction"
