@@ -249,6 +249,7 @@ export type Database = {
           display_name: string | null
           email: string
           id: string
+          must_change_password: boolean
           role: string
         }
         Insert: {
@@ -256,6 +257,7 @@ export type Database = {
           display_name?: string | null
           email: string
           id: string
+          must_change_password?: boolean
           role?: string
         }
         Update: {
@@ -263,6 +265,7 @@ export type Database = {
           display_name?: string | null
           email?: string
           id?: string
+          must_change_password?: boolean
           role?: string
         }
         Relationships: []
@@ -273,6 +276,7 @@ export type Database = {
     }
     Functions: {
       has_users: { Args: never; Returns: boolean }
+      mark_password_changed: { Args: never; Returns: undefined }
       upsert_holding_delta: {
         Args: {
           p_amount_delta: number
