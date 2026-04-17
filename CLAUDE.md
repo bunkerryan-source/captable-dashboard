@@ -4,7 +4,7 @@
 
 Web-based cap table dashboard for ABP Capital. Tracks equity ownership across ~20-30 legal entities with a complete audit trail of transactions (gifts, sales, redemptions, transfers, issuances, corrections). Replaces spreadsheet-based tracking.
 
-**Current phase:** Phase 5 complete — live on Vercel with Supabase backend, multi-user auth with copy-link invites, historical snapshots, CSV export, file attachments (add on edit too), atomic holdings updates, rich change log, holder detail sidebar, cap table sorted by position, and auth-resilient middleware that clears broken cookies automatically.
+**Current phase:** Phase 6 complete — live on Vercel with Supabase backend, manual user onboarding (admin creates user in Supabase, forced password change on first login), historical snapshots, CSV export, file attachments (add on edit too), atomic holdings updates, rich change log, holder detail sidebar, cap table sorted by position, and auth-resilient middleware that clears broken cookies automatically.
 
 ## Deployment
 
@@ -15,7 +15,7 @@ Web-based cap table dashboard for ABP Capital. Tracks equity ownership across ~2
 | Vercel project | `cap-table-dashboard` (team: `team_cvOrlfMiLR7nAdZryqer1lEn`) |
 | Supabase project | `jvfjnwztbsybhnggrgdc` (us-west-1) |
 
-Pushes to `main` trigger auto-deploy on Vercel.
+Pushes to `main` *should* trigger auto-deploy on Vercel. As of 2026-04-17 the GitHub App ↔ Vercel integration stopped firing — pushes land on GitHub but no deployment is created. Manual deploy via Vercel CLI (`npx vercel --prod --yes` from project root, uses local auth at `%APPDATA%/com.vercel.cli/Data/auth.json`) still works and is the fallback. To restore auto-deploy: Vercel project → Settings → Git → Disconnect then Reconnect to same repo (re-registers the GitHub App's event subscription). GitHub App is installed and set to "All repos"; this isn't a permissions problem, the App's event subscription for this project is stale.
 
 ## Tech Stack
 
@@ -47,24 +47,25 @@ src/
 │   ├── layout.tsx               # Root: Outfit font, AuthProvider
 │   ├── globals.css              # Tailwind v4 @theme design tokens
 │   ├── login/page.tsx           # Login page (also handles first-user setup)
-│   ├── auth/callback/route.ts   # Supabase auth callback (invite email links)
+│   ├── forgot-password/page.tsx # Send password reset email via Supabase
+│   ├── set-password/page.tsx    # First-login forced password change + reset-email landing
 │   └── (dashboard)/
-│       ├── layout.tsx           # Gates DashboardProvider behind auth readiness
+│       ├── layout.tsx           # Gates DashboardProvider; redirects to /set-password if flag is set
 │       └── page.tsx             # Main dashboard page (loading/error/empty/data states)
 ├── components/
-│   ├── layout/                  # AppHeader (user menu, invite), EntitySelector,
+│   ├── layout/                  # AppHeader (user menu), EntitySelector,
 │   │                            # FooterBar, MobileEntityBar
 │   ├── dashboard/               # MetadataRow, CapTable
 │   ├── changelog/               # ChangeLogPanel, ChangeLogEntry, ChangeLogFilters,
 │   │                            # TransactionBadge (entries show rich transaction summaries)
 │   ├── holder-detail/           # HolderDetailPanel (sliding sidebar for holder transactions)
 │   ├── modals/                  # ModalShell, RecordTransactionModal, AddHolderModal,
-│   │   │                        # EntitySetupModal, EntitySettingsModal, InviteUserModal
+│   │   │                        # EntitySetupModal, EntitySettingsModal
 │   │   └── transaction-fields/  # GiftFields, SaleFields, RedemptionFields, etc.
 │   └── ui/                      # Button, Input, Select, Textarea, Toggle, Badge,
 │                                # PillSelector, FileUploadZone, Backdrop
 ├── context/
-│   ├── AuthContext.tsx           # Auth state: user, role, displayName, loading
+│   ├── AuthContext.tsx           # Auth state: user, role, displayName, mustChangePassword, loading
 │   └── DashboardContext.tsx      # App data state, reducer, fetches from Supabase on mount
 ├── hooks/
 │   ├── useSelectedEntity.ts     # URL param → entity + holdings + transactions
@@ -86,7 +87,7 @@ src/
 │   │   ├── holders.ts           # fetchHolders, addHolder
 │   │   ├── holdings.ts          # fetchHoldings, upsertHoldings, upsertHoldingsDelta
 │   │   ├── transactions.ts      # fetchTransactionsWithAttachments, recordTransaction
-│   │   └── auth.ts              # signIn, signOut, getCurrentUser, getUserProfile, inviteUser
+│   │   └── auth.ts              # signIn, signOut, getCurrentUser, getUserProfile
 │   ├── formatters.ts            # Number/percent/currency/date formatting
 │   ├── formatTransactionSummary.ts # Human-readable summaries + holder transaction filter
 │   ├── computeTotals.ts         # Column summation for totals row
@@ -104,25 +105,31 @@ src/
 - `holdings` — join table: holder × equity_class with amount/committed_capital
 - `transactions` — audit trail with type, date, metadata (jsonb)
 - `transaction_attachments` — files linked to transactions
-- `user_profiles` — links auth.users to app roles (admin/editor)
+- `user_profiles` — links auth.users to app roles (admin/editor) and `must_change_password` flag
 
 **RPC functions:**
 - `upsert_holding_delta(p_entity_id, p_holder_id, p_equity_class_id, p_amount_delta, p_committed_capital?, p_holder_role?)` — Atomic upsert that adds `p_amount_delta` to existing holding amount (or inserts if new). Uses `COALESCE` to preserve existing `committed_capital` and `holder_role` when not provided.
 - `has_users()` — Returns boolean, used during first-user setup flow.
 
+**Triggers:**
+- `on_auth_user_created` on `auth.users` INSERT → `handle_new_user()` auto-creates the `user_profiles` row with `role = 'editor'` and `must_change_password = true` whenever an admin adds a user in Supabase Dashboard.
+- `on_auth_user_password_change` on `auth.users` UPDATE → `handle_password_change()` flips `must_change_password = false` on the matching `user_profiles` row whenever `encrypted_password` changes. This is the mechanism that clears the flag — clients do not write to the flag directly.
+
 ## Auth Architecture
 
-- **Roles:** `admin` (full access + invite users), `editor` (full data access)
-- **Flow:** Email/password login. Admin creates invite links via Edge Function (`invite-user`) and sends them through their own email client — the app never relies on Supabase's rate-limited default SMTP.
-- **Edge Function:** `invite-user` (v6, `verify_jwt: false`) — decodes JWT from Authorization header, checks admin role via user_profiles, then calls `auth.admin.generateLink()` to produce a signup link (new user) or magic link (existing user). Returns `{ inviteUrl, isExisting }` so the UI can display a copy-to-clipboard link. Auto-creates a `user_profiles` row for new users with the requested role.
-- **Client-side invite:** `inviteUser()` in DAL returns `{ inviteUrl, isExisting }`. Passes `window.location.origin` as `siteUrl` so generated links redirect to the correct environment (dev / preview / prod).
-- **Invite UI:** `InviteUserModal` has two states: form (email/role/displayName) and link-display (the URL with a Copy button + 24-hour/single-use notice). No "email sent" confirmation state — the admin delivers the link themselves.
-- **Sign out:** `signOut()` calls Supabase with `scope: 'local'` to clear only local cookies (no server roundtrip, so it works even when the session is stale). `AppHeader.handleSignOut` follows up with `window.location.href = '/login'` to force a full reload and reset all client state.
-- **Auth resilience:** `AuthContext` starts the `getUser()` call during the render phase (not in `useEffect`) because React 19 + Next.js 16 sometimes fails to flush passive effects after hydrating statically-prerendered pages. A `useRef` guard ensures it runs only once. The `onAuthStateChange` listener is kept in `useEffect` for proper cleanup. The browser client also bypasses the Web Locks API (`navigator.locks`) to prevent orphaned locks from hanging `getUser()`.
-- **Cookie hygiene in middleware:** When `getUser()` fails or returns an error (corrupt/expired refresh token), middleware proactively deletes all `sb-*` cookies on the redirect response. This prevents the "must clear site data to load the site" failure mode where the browser keeps sending broken auth cookies on every request, and middleware keeps redirecting without ever telling the browser to forget them.
-- **Auth gating:** `(dashboard)/layout.tsx` is a client component that waits for `useAuth().loading` to be false before mounting `DashboardProvider`, preventing data fetches before the auth session is hydrated.
+- **Roles:** `admin` (full access, can edit/delete transactions), `editor` (full data access, no admin-only operations).
+- **Onboarding (manual, no in-app invite):** Admin creates users directly in Supabase Dashboard → Authentication → Users with a temp password. The `on_auth_user_created` trigger immediately populates `user_profiles` with `role = 'editor'` and `must_change_password = true`. Admin delivers the URL + email + temp password to the user over whatever channel. On first sign-in, the dashboard layout detects the flag and redirects to `/set-password`.
+- **Set-password flow:** `/set-password` bypasses `supabase.auth.updateUser` (which hangs on its post-success session refresh under `@supabase/ssr`) and PUTs directly to the Supabase Auth REST API at `/auth/v1/user` with the current session's access token. The `on_auth_user_password_change` trigger flips `must_change_password = false` server-side when `auth.users.encrypted_password` actually changes — clients never touch the flag. On success, the page does `window.location.href = "/"` (full reload, not `router.push`) so `AuthContext` reinitializes with the fresh `user_profiles` row instead of cached React state.
+- **Forgot-password flow:** `/forgot-password` calls `supabase.auth.resetPasswordForEmail` with `redirectTo = <origin>/set-password`. The email-delivered link lands the user on `/set-password` with a recovery session; the same trigger flips the flag if the user chooses a new password.
+- **Middleware allowlist:** `/login`, `/forgot-password`, and `/set-password` are accessible without a session. Everything else redirects unauthenticated users to `/login`. Authenticated users visiting `/login` get bounced to `/`.
+- **Dashboard gate:** `(dashboard)/layout.tsx` waits for `useAuth().loading === false` before mounting `DashboardProvider`. If `mustChangePassword === true`, it redirects to `/set-password` before any data fetches. This keeps RLS-behind-stale-session empty-query bugs away.
+- **Sign out:** `signOut({ scope: 'local' })` clears local cookies only (no server roundtrip, so it works when the session is stale). `AppHeader.handleSignOut` follows with `window.location.href = '/login'` to force a full reload and reset all client state. **Note: this still isn't reliably working — see Known Issues.**
+- **Auth resilience:** `AuthContext` starts `getUser()` during render (with a `useRef` one-shot guard), not in `useEffect`, because React 19 + Next.js 16 sometimes fails to flush passive effects after hydrating statically-prerendered pages. `onAuthStateChange` stays in `useEffect` for proper cleanup. The browser client bypasses the Web Locks API (`lock: fn => fn()`) to prevent orphaned locks from hanging `getUser()`.
+- **Cookie hygiene in middleware:** When `getUser()` fails, middleware proactively deletes all `sb-*` cookies on the response — fixes the "must clear site data to load the site" failure mode where the browser keeps resending broken tokens.
 - **Admin transaction management:** Admins can edit and delete transactions from the change log. Edit opens the RecordTransactionModal pre-populated with existing data. Delete shows an inline confirmation.
 - **Add Holder from transaction form:** When "+ Add new holder..." is selected in any holder dropdown within the Record Transaction modal, an inline mini-form appears (name + type). On submit, the new holder is created and auto-selected in the dropdown.
+
+**Orphaned Supabase objects (safe to leave, can be dropped):** The old `mark_password_changed()` RPC was replaced by the trigger-based approach and is no longer called. `drop function if exists public.mark_password_changed();` to clean up. Supabase Edge Function `invite-user` was deleted already.
 
 ## Design System
 
@@ -155,31 +162,24 @@ src/
 
 ## Known Issues / TODO
 
-- **🐞 OPEN BUG — Sign out link does nothing.** Clicking "Sign out" in the user menu has no visible effect — user stays on the dashboard, session not cleared. **First fix attempt (Phase 5, commit `638d594`) did not resolve it** — changed `signOut()` to `{ scope: 'local' }` and the handler now does `window.location.href = '/login'` after the await. **Suspect areas to investigate next time:**
-  - The menu has an outside-click-to-close handler (`menuRef` in `AppHeader.tsx`). The sign-out `<button>` is inside that menu, but the mousedown-based dismissal may be swallowing the click event before the button's onClick fires. Try changing outside-click detection to mouseup OR check `e.target` before closing. Alternative: move Sign Out outside the menu or test with `onMouseDown` instead of `onClick`.
-  - `signOut({ scope: 'local' })` may not actually clear cookies synchronously — the await resolves but the browser cookie store update is asynchronous. If `window.location.href` fires before cookies are flushed, middleware sees valid cookies, identifies the user, and the `user && /login` branch redirects back to `/`. User bounces straight back to the dashboard so it *looks* like nothing happened. **Verify:** check Network tab on sign-out click — should see navigation to `/login` that doesn't redirect back to `/`.
-  - Multiple `createClient()` instances: AppHeader's `signOut()` uses a fresh client; AuthContext has its own. Cookies are shared so this should still work, but worth verifying the actual Supabase JS behavior here with `scope: 'local'`.
-  - Alternative fix to try first: explicitly delete `sb-*` cookies client-side before navigating, instead of relying on `signOut()`. Mirror the middleware's `clearSupabaseCookies` logic with `document.cookie = 'sb-X=; Max-Age=0; path=/'`.
-  - **Ryan's current workaround:** Clear site data manually, or close the tab entirely.
-- **🐞 OPEN BUG — Edit transaction doesn't update cap table holdings.** When an admin edits a transaction from the change log (e.g. fixing a share count), the transaction record itself updates correctly but the cap table still reflects the original numbers. **First fix attempt (Phase 5, commit `638d594`) did not resolve it** — the intended logic reverses the original transaction's deltas and applies new deltas via `upsert_holding_delta`, but users still see stale cap table data after edit. **Suspect areas to investigate next time:**
-  - The `computeDeltas()` call reads `original.metadata` from the in-memory `transactions` array. If the original metadata stored as JSONB contains non-string values or different key casing than expected, the deltas could be empty/wrong.
-  - The `INIT_DATA` dispatch in the edit path uses `entities` and `holders` from current context state (not a fresh fetch), which is correct, but `dalFetchHoldings()` is awaited right before — if the RPC commit hasn't propagated to read replicas yet, we'd fetch stale data. (Unlikely on Supabase single-region but worth ruling out.)
-  - Edit-path branch may be executing the `dispatch({ type: "UPDATE_TRANSACTION" })` path instead of the `INIT_DATA` path if `oldDeltas.length === 0 && newDeltas.length === 0`. Check whether a transaction being edited has metadata that produces empty deltas (e.g. missing `holder` key).
-  - Verify the edge function is actually receiving and processing the reversal deltas — add console.log or check network tab on an edit.
+- **🐞 OPEN BUG — Edit transaction doesn't update cap table holdings.** When an admin edits a transaction from the change log (e.g. fixing a share count typo), the transaction row itself updates correctly but the cap table keeps showing the original numbers. **First fix attempt (commit `638d594`) did not resolve it** — the intended logic reverses the original transaction's deltas and applies new deltas via `upsert_holding_delta`, but users still see stale cap table data after edit. **Suspect areas to investigate next session:**
+  - `computeDeltas()` reads `original.metadata` from the in-memory `transactions` array. If the original metadata stored as JSONB contains non-string values or different key casing than the builder expects, the deltas could be empty/wrong.
+  - The `INIT_DATA` dispatch in the edit path uses `entities`/`holders` from current context state (not a fresh fetch), which is correct, but `dalFetchHoldings()` runs right before — if Postgres read-after-write ordering lags here (unlikely on Supabase single-region but worth ruling out), we'd fetch stale data.
+  - Edit-path branch may be executing the `dispatch({ type: "UPDATE_TRANSACTION" })` path instead of the `INIT_DATA` path if `oldDeltas.length === 0 && newDeltas.length === 0`. Check whether a transaction being edited has metadata that produces empty deltas (e.g., missing `holder` key).
+  - Verify the RPC is actually receiving and processing the reversal deltas — add console.log in the handler or watch the network tab on an edit.
   - **Ryan's current workaround:** Redeem the holder's entire position via a new transaction, delete the original (wrong) transaction from the log, then create a new transaction for the correct amount.
-- **🐞 PARTIALLY FIXED — Manual user onboarding flow (2026-04-17, paused mid-smoke-test).** The old InviteUserModal + `invite-user` edge function + `/auth/callback` flow was scrapped in favor of admin-creates-user-in-Supabase-Dashboard → `must_change_password` flag → `/set-password` on first login. Plan: [docs/superpowers/plans/2026-04-17-manual-user-onboarding.md](docs/superpowers/plans/2026-04-17-manual-user-onboarding.md). Spec: [docs/superpowers/specs/2026-04-17-manual-user-onboarding-design.md](docs/superpowers/specs/2026-04-17-manual-user-onboarding-design.md). **Status:** Tasks 1-8 complete and committed (Supabase migration + trigger + RPC done, AuthContext + DAL + /set-password + /forgot-password + login forgot-link + dashboard-redirect all in place). Task 9 (rip out old invite modal/edge-function/auth-callback-route) NOT YET DONE — old and new flows coexist in the code. **Bug hit in smoke test (not yet verified fixed):** After submit on /set-password, `AuthContext` had `mustChangePassword = true` cached in React state from sign-in; the dashboard layout saw stale state and bounced back to /set-password in a loop. Each attempt's password DID save in Supabase (confirmed by "new password must differ" rejection on retry), but the UI appeared stuck with button frozen on "Saving…". Fix pushed in commit `e57bfb8` (changed `router.push("/")` → `window.location.href = "/"` in `src/app/set-password/page.tsx` to force full page reload and re-initialize AuthContext). **Fix has NOT been verified end-to-end yet** — Ryan paused before retesting. **Next session:**
-  - Kill any running dev server, `rmdir /s /q .next`, restart `npm run dev` to guarantee the fix is live.
-  - Reset test user in Supabase (delete `test-onboarding@abpcapital.com` from Auth + user_profiles, recreate via Dashboard Add User with temp password `TempPass2026!`, auto-confirm ON — the trigger will re-create user_profiles with must_change_password=true).
-  - Retest: sign in → should redirect to /set-password → submit new 8+ char password → should land on dashboard with full page reload (NOT bounce back).
-  - If still buggy: the stuck "Saving…" button may point to something beyond stale state — possibly the submit handler's promise chain hanging (`markPasswordChanged` RPC not resolving? Supabase session getting invalidated mid-submit?). Check browser DevTools Network tab on the retry for pending requests.
-  - Once the flow is verified, run Task 9 to delete InviteUserModal, inviteUser DAL, /auth/callback route, and the invite button in AppHeader.
-  - Then Task 10: final prod verification after push to main.
-- **Edge Function `verify_jwt` is `false`** — this is the recommended pattern per Supabase docs. The gateway's `verify_jwt` is a legacy mechanism being phased out in favor of functions handling their own auth. The `invite-user` function already validates the JWT and checks admin role internally. No change needed.
-- **Supabase Site URL** — verify in Supabase Dashboard (Authentication > URL Configuration) that Site URL is `https://abpcaptabledashboard.vercel.app` and Redirect URLs includes `https://abpcaptabledashboard.vercel.app/set-password`.
-- **Supabase email confirmation** — disabled manually in Supabase dashboard. If re-enabled, users will be blocked from logging in until they confirm email.
-- **Supabase SMTP not configured** — Intentional. The invite flow uses copy-link (admin delivers manually) specifically to avoid the Supabase default SMTP rate limit (~2-4 emails/hour per project). If custom SMTP is ever configured later, the `invite-user` edge function could be reverted to `inviteUserByEmail()` — but the current copy-link flow is arguably better UX (admin stays in control of messaging).
+- **🐞 OPEN BUG — Sign out link does nothing.** Clicking "Sign out" in the user menu has no visible effect — user stays on the dashboard, session not cleared. **First fix attempt (commit `638d594`) did not resolve it** — changed `signOut()` to `{ scope: 'local' }` and the handler now does `window.location.href = '/login'` after the await. **Suspect areas to investigate next time:**
+  - The menu has an outside-click-to-close handler (`menuRef` in `AppHeader.tsx`). The sign-out `<button>` is inside that menu, but the mousedown-based dismissal may be swallowing the click event before the button's onClick fires. Try changing outside-click detection to mouseup OR check `e.target` before closing.
+  - `signOut({ scope: 'local' })` may not clear cookies synchronously — the await resolves but the browser cookie store update is async. If `window.location.href` fires before cookies flush, middleware sees valid cookies and bounces back to `/`. **Verify:** check Network tab on sign-out click — should see navigation to `/login` that doesn't redirect back to `/`.
+  - Alternative fix to try: explicitly delete `sb-*` cookies client-side with `document.cookie = 'sb-X=; Max-Age=0; path=/'` before navigating, mirroring middleware's `clearSupabaseCookies`.
+  - **Ryan's current workaround:** Clear site data manually or close the tab.
+- **⚠️ Vercel auto-deploy broken.** As of 2026-04-17, pushes to `main` no longer trigger a Vercel build. All 13 commits pushed that day landed on GitHub but produced zero deployments. GitHub App is installed with "All repos" access; the App's event subscription for this project is stale. Fix path: Vercel project → Settings → Git → Disconnect, then Reconnect to same repo. Manual deploy via `npx vercel --prod --yes` from project root works as a fallback (uses local CLI auth at `%APPDATA%/com.vercel.cli/Data/auth.json`).
+- **Supabase Auth configuration:**
+  - Site URL must be `https://abpcaptabledashboard.vercel.app` and Redirect URLs must include `.../set-password` (Authentication → URL Configuration).
+  - Email confirmation is disabled. If re-enabled, new users will be blocked from logging in until they confirm email.
+  - Default SMTP is used for forgot-password emails only. Subject to Supabase's ~2-4/hour rate limit, but at ~5-7 total users this is a non-issue.
 - **Multi-class % of Total** — The "% of Total" column currently uses the first non-percentage equity class for its calculation. Entities with multiple non-percentage classes (e.g., Class A Shares + Class B Shares) need per-class percentage columns instead of a single aggregate column.
-- **Diluted vs. undiluted ownership** — Some entities have options or profits interests. The cap table will need two percentage columns: one for regular ownership (excluding options/profits interests) and one for fully diluted ownership (including options/profits interests). Requires a way to flag equity classes as dilutive instruments (options, profits interests) vs. base equity, then compute both percentages.
+- **Diluted vs. undiluted ownership** — Some entities have options or profits interests. The cap table will need two percentage columns: one for regular ownership (excluding options/profits interests) and one for fully diluted ownership (including options/profits interests). Requires a way to flag equity classes as dilutive instruments vs. base equity, then compute both percentages.
 
 ## Completed Features (Phase 3)
 
@@ -196,16 +196,22 @@ src/
 ## Completed Features (Phase 5)
 
 - **Middleware cookie hygiene (fixes "must clear site data" bug)** — When auth fails in middleware, all `sb-*` cookies are proactively deleted on the redirect response. Prevents the browser from infinitely resending broken refresh tokens and getting stuck in a redirect loop. See `clearSupabaseCookies()` in `src/lib/supabase/middleware.ts`.
-- **Reliable sign out** — Changed to `signOut({ scope: 'local' })` so it works even when the session is already stale (no server roundtrip that could hang). Follow-up uses `window.location.href` for a full reload to reset all client state.
-- **Copy-link invite flow** — Replaced Supabase's default-SMTP invite emails (which silently drop after hitting the ~2-4/hour rate limit) with an in-app copy-link flow. Admin clicks Invite, modal shows a one-time signup link with a Copy button, admin sends it via their own email. Edge function v6 uses `auth.admin.generateLink()`. Handles both new users (invite link) and existing users (magic link) transparently. Links carry the current origin as `redirectTo` so they work across dev/preview/prod.
 - **Cap table sort by position** — Holders now ordered by total amount across all equity classes, descending. GP / managing member still pinned to top. Alpha tiebreak.
-- **Attachments on transaction edit** — The edit modal now accepts file uploads too. Appends new attachments to the existing list rather than replacing. Useful when you log a transaction and want to add supporting docs later.
-- **Transaction edit → holdings update (ATTEMPTED, NOT WORKING)** — `RecordTransactionModal.handleSubmit` was refactored to, on edit, compute the original transaction's deltas, reverse them, apply new deltas via `upsert_holding_delta`, then refetch holdings. **This is not actually working in production** — see Known Issues / TODO for debugging notes.
+- **Attachments on transaction edit** — The edit modal accepts file uploads too. Appends new attachments to the existing list rather than replacing. Useful when you log a transaction and want to add supporting docs later.
+
+## Completed Features (Phase 6) — 2026-04-17
+
+- **Manual user onboarding** replaces the old copy-link invite flow entirely. Admin adds users in Supabase Dashboard with a temp password; the `handle_new_user()` trigger auto-creates the `user_profiles` row with `must_change_password = true`. Plan: [docs/superpowers/plans/2026-04-17-manual-user-onboarding.md](docs/superpowers/plans/2026-04-17-manual-user-onboarding.md). Spec: [docs/superpowers/specs/2026-04-17-manual-user-onboarding-design.md](docs/superpowers/specs/2026-04-17-manual-user-onboarding-design.md).
+- **New `/set-password` page** catches both first-login (forced password change) and forgot-password reset landings. Bypasses `supabase.auth.updateUser` — which hangs indefinitely on its internal post-success session refresh under `@supabase/ssr` — and PUTs directly to the Supabase Auth REST API at `/auth/v1/user` with the current session's bearer token.
+- **`on_auth_user_password_change` Postgres trigger** atomically flips `must_change_password = false` whenever `auth.users.encrypted_password` changes. Eliminates the client-side RPC race that was causing the submit handler to hang.
+- **New `/forgot-password` page** calls `resetPasswordForEmail` with `redirectTo = <origin>/set-password`. Returns a neutral "if an account exists..." message to avoid leaking whether an email is registered.
+- **Middleware allowlist expanded** to let unauthenticated users reach `/forgot-password` and `/set-password` directly (previously bounced to `/login`).
+- **Deleted:** `InviteUserModal`, `inviteUser()` DAL + `InviteResult` type, `markPasswordChanged()` DAL helper, `/auth/callback` route, invite button in AppHeader, `invite-user` Supabase edge function.
 
 ## Next Steps
 
-1. **🐞 Build the set-password flow for invited users** (see Known Issues). Blocking new-user onboarding — invitees can get in once via the link but can never sign in again afterward. Highest priority because it's the only bug that actively prevents adding real users.
+1. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Data-integrity adjacent — when an admin fixes a wrong share count from the change log, the transaction row updates but the cap table continues showing the pre-edit numbers. Top priority because it affects the accuracy of what users see.
 2. **🐞 Fix the sign-out bug** (see Known Issues). Clicking Sign out does nothing; users can't leave without clearing site data.
-3. **🐞 Fix the transaction-edit → cap-table-update bug** (see Known Issues). Data-integrity adjacent — edit UI updates the transaction row but the cap table still shows pre-edit numbers.
+3. **Restore Vercel auto-deploy** — Disconnect/reconnect Git integration in Vercel project settings.
 4. **Multi-class percentage columns** — For entities with multiple non-percentage equity classes, show a separate "% of Total" sub-column next to each class instead of one aggregate column.
 5. **Diluted / undiluted percentage columns** — Add support for tagging equity classes as dilutive (options, profits interests) and showing both regular and fully diluted ownership percentages.
