@@ -50,7 +50,7 @@ export default function SetPasswordPage() {
       });
       if (updateError) throw updateError;
       await markPasswordChanged();
-      router.push("/");
+      window.location.href = "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to set password");
     } finally {
