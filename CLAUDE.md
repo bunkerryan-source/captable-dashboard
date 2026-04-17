@@ -10,7 +10,7 @@ Web-based cap table dashboard for ABP Capital. Tracks equity ownership across ~2
 
 | Service | URL / ID |
 |---|---|
-| Live site | https://cap-table-dashboard.vercel.app |
+| Live site | https://abpcaptabledashboard.vercel.app (old `cap-table-dashboard.vercel.app` redirects) |
 | GitHub repo | https://github.com/bunkerryan-source/captable-dashboard |
 | Vercel project | `cap-table-dashboard` (team: `team_cvOrlfMiLR7nAdZryqer1lEn`) |
 | Supabase project | `jvfjnwztbsybhnggrgdc` (us-west-1) |
@@ -173,7 +173,7 @@ src/
   - Consider showing a "Reset / set password" link on the login page that triggers `resetPasswordForEmail()` so stuck users can self-rescue without admin intervention.
   - **Admin workaround in the meantime:** Generate a fresh invite link (24-hour TTL — have them click immediately). While they're signed in via the callback, either (a) they use the app in that session only, or (b) admin manually sets their password from Supabase Dashboard → Authentication → Users → Edit user. Neither is a real fix.
 - **Edge Function `verify_jwt` is `false`** — this is the recommended pattern per Supabase docs. The gateway's `verify_jwt` is a legacy mechanism being phased out in favor of functions handling their own auth. The `invite-user` function already validates the JWT and checks admin role internally. No change needed.
-- **Supabase Site URL** — verify in Supabase Dashboard (Authentication > URL Configuration) that Site URL is `https://cap-table-dashboard.vercel.app` and Redirect URLs includes `https://cap-table-dashboard.vercel.app/auth/callback`.
+- **Supabase Site URL** — verify in Supabase Dashboard (Authentication > URL Configuration) that Site URL is `https://abpcaptabledashboard.vercel.app` and Redirect URLs includes `https://abpcaptabledashboard.vercel.app/set-password`.
 - **Supabase email confirmation** — disabled manually in Supabase dashboard. If re-enabled, users will be blocked from logging in until they confirm email.
 - **Supabase SMTP not configured** — Intentional. The invite flow uses copy-link (admin delivers manually) specifically to avoid the Supabase default SMTP rate limit (~2-4 emails/hour per project). If custom SMTP is ever configured later, the `invite-user` edge function could be reverted to `inviteUserByEmail()` — but the current copy-link flow is arguably better UX (admin stays in control of messaging).
 - **Multi-class % of Total** — The "% of Total" column currently uses the first non-percentage equity class for its calculation. Entities with multiple non-percentage classes (e.g., Class A Shares + Class B Shares) need per-class percentage columns instead of a single aggregate column.

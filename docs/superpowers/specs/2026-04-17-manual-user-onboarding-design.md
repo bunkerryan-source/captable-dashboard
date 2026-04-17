@@ -146,7 +146,7 @@ These are one-time, run by Ryan:
 2. Run the migration SQL in Supabase SQL Editor.
 3. Delete the `invite-user` edge function.
 4. Set **Authentication → Providers → Email → Minimum password length** to `8`.
-5. Verify **Authentication → URL Configuration** includes `https://cap-table-dashboard.vercel.app/set-password` in Redirect URLs (so forgot-password reset links work).
+5. Verify **Authentication → URL Configuration** includes `https://abpcaptabledashboard.vercel.app/set-password` in Redirect URLs (so forgot-password reset links work).
 
 ## User Flows
 
@@ -154,7 +154,7 @@ These are one-time, run by Ryan:
 
 1. Ryan: Supabase Dashboard → Add user (`jane@c3bank.com`, temp password `TempPass2026!`)
 2. Trigger fires → `user_profiles` row created with `must_change_password = true`
-3. Ryan texts Jane: "cap-table-dashboard.vercel.app — email jane@c3bank.com — temp password TempPass2026! — you'll set your own password on first login"
+3. Ryan texts Jane: "abpcaptabledashboard.vercel.app — email jane@c3bank.com — temp password TempPass2026! — you'll set your own password on first login"
 4. Jane opens the URL, enters credentials, clicks Sign In
 5. `AuthContext` loads her profile; `(dashboard)/layout.tsx` sees `mustChangePassword = true` → redirects to `/set-password`
 6. Jane enters new password twice, clicks Submit

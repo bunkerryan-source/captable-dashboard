@@ -132,7 +132,7 @@ Expected: "Success. No rows returned." for each statement.
 - [ ] **Step 7: Add `/set-password` to Redirect URLs**
 
 1. Dashboard → Authentication → URL Configuration
-2. Add `https://cap-table-dashboard.vercel.app/set-password` to "Redirect URLs"
+2. Add `https://abpcaptabledashboard.vercel.app/set-password` to "Redirect URLs"
 3. Add `http://localhost:3000/set-password` to "Redirect URLs" (for local dev)
 4. Save
 
@@ -1016,7 +1016,7 @@ Delete `final-test@abpcapital.com` from Supabase Dashboard.
 git push origin main
 ```
 
-Wait for Vercel auto-deploy. Once live at https://cap-table-dashboard.vercel.app, repeat Task 10 Step 2 against production (with a throwaway test user) to confirm the prod URL flow works end-to-end, including the redirect URL allowlist entries added in Task 1 Step 7.
+Wait for Vercel auto-deploy. Once live at https://abpcaptabledashboard.vercel.app, repeat Task 10 Step 2 against production (with a throwaway test user) to confirm the prod URL flow works end-to-end, including the redirect URL allowlist entries added in Task 1 Step 7.
 
 - [ ] **Step 6: Update CLAUDE.md**
 
