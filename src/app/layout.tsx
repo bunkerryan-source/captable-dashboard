@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
 import { AuthProvider } from "@/context/AuthContext";
 import "./globals.css";
@@ -13,6 +13,17 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "ABP Capital \u2014 Cap Table Dashboard",
   description: "Equity ownership tracking for ABP Capital entities",
+  appleWebApp: {
+    capable: true,
+    title: "ABP Capital",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#004a59",
 };
 
 export default function RootLayout({
