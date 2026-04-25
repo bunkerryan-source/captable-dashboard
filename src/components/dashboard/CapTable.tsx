@@ -17,13 +17,62 @@ export function CapTable({ entity, holdersWithHoldings, onSelectHolder }: CapTab
   const committedCapitalTotal = entity.showCommittedCapital
     ? computeCommittedCapitalTotal(holdersWithHoldings)
     : 0;
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrolled, setScrolled] = useState(false);
 
   // Which classes need a "% of Total" column (everything except percentage unitType)
   const classesNeedingPercent = new Set(
     classes.filter((c) => c.unitType !== "percentage").map((c) => c.id)
   );
+
+  return (
+    <>
+      {/* Mobile: card layout (below sm) */}
+      <div className="sm:hidden">
+        <MobileCardList
+          holdersWithHoldings={holdersWithHoldings}
+          classes={classes}
+          totals={totals}
+          classesNeedingPercent={classesNeedingPercent}
+          showCommittedCapital={entity.showCommittedCapital}
+          committedCapitalTotal={committedCapitalTotal}
+          onSelectHolder={onSelectHolder}
+        />
+      </div>
+
+      {/* Tablet/desktop: table layout (sm and up) */}
+      <div className="hidden sm:block">
+        <DesktopTable
+          classes={classes}
+          totals={totals}
+          holdersWithHoldings={holdersWithHoldings}
+          classesNeedingPercent={classesNeedingPercent}
+          showCommittedCapital={entity.showCommittedCapital}
+          committedCapitalTotal={committedCapitalTotal}
+          onSelectHolder={onSelectHolder}
+        />
+      </div>
+    </>
+  );
+}
+
+function DesktopTable({
+  classes,
+  totals,
+  holdersWithHoldings,
+  classesNeedingPercent,
+  showCommittedCapital,
+  committedCapitalTotal,
+  onSelectHolder,
+}: {
+  classes: EquityClass[];
+  totals: Map<string, number>;
+  holdersWithHoldings: HolderWithHoldings[];
+  classesNeedingPercent: Set<string>;
+  showCommittedCapital: boolean;
+  committedCapitalTotal: number;
+  onSelectHolder?: (holderId: string) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
 
   // Detect horizontal scroll to show pinned column shadow
   useEffect(() => {
@@ -60,7 +109,7 @@ export function CapTable({ entity, holdersWithHoldings, onSelectHolder }: CapTab
                   % of Total
                 </th>
               )}
-              {entity.showCommittedCapital && (
+              {showCommittedCapital && (
                 <th className="text-right px-5 py-3 text-[11px] font-medium text-text-secondary uppercase tracking-[0.05em] border-b border-border whitespace-nowrap">
                   Committed Capital
                 </th>
@@ -75,7 +124,7 @@ export function CapTable({ entity, holdersWithHoldings, onSelectHolder }: CapTab
                 classes={classes}
                 totals={totals}
                 classesNeedingPercent={classesNeedingPercent}
-                showCommittedCapital={entity.showCommittedCapital}
+                showCommittedCapital={showCommittedCapital}
                 isEven={idx % 2 === 1}
                 scrolled={scrolled}
                 onSelect={onSelectHolder}
@@ -85,7 +134,7 @@ export function CapTable({ entity, holdersWithHoldings, onSelectHolder }: CapTab
               classes={classes}
               totals={totals}
               classesNeedingPercent={classesNeedingPercent}
-              showCommittedCapital={entity.showCommittedCapital}
+              showCommittedCapital={showCommittedCapital}
               committedCapitalTotal={committedCapitalTotal}
               scrolled={scrolled}
             />
@@ -116,34 +165,8 @@ function HolderRow({
   onSelect?: (holderId: string) => void;
 }) {
   const rowBg = isEven ? "bg-surface-alt/50" : "bg-white";
-
-  // Find the max committed capital across this holder's holdings
-  const committedCapital = hwh.holdings.reduce<number | null>((max, h) => {
-    if (h.committedCapital !== null) {
-      return max !== null ? Math.max(max, h.committedCapital) : h.committedCapital;
-    }
-    return max;
-  }, null);
-
-  // Compute ownership percentage across non-percentage classes
-  // Sum the holder's amounts for classes that need percent, divide by sum of totals
-  let holderPctValue: number | null = null;
-  if (classesNeedingPercent.size > 0) {
-    // For each non-percentage class, compute the holder's share
-    // If entity has multiple non-percentage classes, we use a weighted approach:
-    // show the percentage based on the first non-percentage class with a holding
-    // (most entities have one primary class for ownership %)
-    for (const ec of classes) {
-      if (!classesNeedingPercent.has(ec.id)) continue;
-      const holding = hwh.holdings.find((h) => h.equityClassId === ec.id);
-      const val = holding?.amount ?? null;
-      const total = totals.get(ec.id) ?? 0;
-      if (val !== null && total > 0) {
-        holderPctValue = (val / total) * 100;
-        break; // Use the first non-percentage class found
-      }
-    }
-  }
+  const committedCapital = getCommittedCapital(hwh);
+  const holderPctValue = computeHolderPercent(hwh, classes, classesNeedingPercent, totals);
 
   return (
     <tr
@@ -180,7 +203,7 @@ function HolderRow({
         <td
           className={`text-right px-5 py-3 border-b border-border tabular-nums ${holderPctValue === null ? "text-text-tertiary" : "text-text-primary"}`}
         >
-          {holderPctValue !== null ? formatPercent(holderPctValue) : "\u2014"}
+          {holderPctValue !== null ? formatPercent(holderPctValue) : "—"}
         </td>
       )}
       {showCommittedCapital && (
@@ -236,4 +259,203 @@ function TotalsRow({
       )}
     </tr>
   );
+}
+
+function MobileCardList({
+  holdersWithHoldings,
+  classes,
+  totals,
+  classesNeedingPercent,
+  showCommittedCapital,
+  committedCapitalTotal,
+  onSelectHolder,
+}: {
+  holdersWithHoldings: HolderWithHoldings[];
+  classes: EquityClass[];
+  totals: Map<string, number>;
+  classesNeedingPercent: Set<string>;
+  showCommittedCapital: boolean;
+  committedCapitalTotal: number;
+  onSelectHolder?: (holderId: string) => void;
+}) {
+  return (
+    <div className="border border-border rounded-xl overflow-hidden bg-white shadow-sm">
+      <div className="px-4 py-2.5 bg-surface border-b border-border">
+        <span className="text-[11px] font-medium text-text-secondary uppercase tracking-[0.05em]">
+          Equity Holders
+        </span>
+      </div>
+      <ul className="divide-y divide-border">
+        {holdersWithHoldings.map((hwh) => (
+          <MobileHolderCard
+            key={hwh.holder.id}
+            hwh={hwh}
+            classes={classes}
+            totals={totals}
+            classesNeedingPercent={classesNeedingPercent}
+            showCommittedCapital={showCommittedCapital}
+            onSelect={onSelectHolder}
+          />
+        ))}
+      </ul>
+      <MobileTotalsCard
+        classes={classes}
+        totals={totals}
+        classesNeedingPercent={classesNeedingPercent}
+        showCommittedCapital={showCommittedCapital}
+        committedCapitalTotal={committedCapitalTotal}
+      />
+    </div>
+  );
+}
+
+function MobileHolderCard({
+  hwh,
+  classes,
+  totals,
+  classesNeedingPercent,
+  showCommittedCapital,
+  onSelect,
+}: {
+  hwh: HolderWithHoldings;
+  classes: EquityClass[];
+  totals: Map<string, number>;
+  classesNeedingPercent: Set<string>;
+  showCommittedCapital: boolean;
+  onSelect?: (holderId: string) => void;
+}) {
+  const committedCapital = getCommittedCapital(hwh);
+  const holderPctValue = computeHolderPercent(hwh, classes, classesNeedingPercent, totals);
+
+  return (
+    <li
+      onClick={() => onSelect?.(hwh.holder.id)}
+      className="px-4 py-3 active:bg-trust-blue/[0.06] transition-colors cursor-pointer"
+    >
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-text-primary text-[14px] truncate">
+            {hwh.holder.name}
+          </div>
+          {hwh.role && (
+            <div className="text-[11px] text-text-tertiary mt-0.5">
+              {hwh.role}
+            </div>
+          )}
+        </div>
+        {holderPctValue !== null && (
+          <div className="text-trust-blue font-semibold text-[14px] tabular-nums shrink-0">
+            {formatPercent(holderPctValue)}
+          </div>
+        )}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2">
+        {classes.map((ec) => {
+          const holding = hwh.holdings.find((h) => h.equityClassId === ec.id);
+          const val = holding?.amount ?? null;
+          return (
+            <div key={ec.id} className="flex items-baseline justify-between gap-2 min-w-0">
+              <dt className="text-[11px] text-text-secondary uppercase tracking-[0.04em] truncate">
+                {ec.name}
+              </dt>
+              <dd
+                className={`text-[13px] tabular-nums shrink-0 ${val === null ? "text-text-tertiary" : "text-text-primary"}`}
+              >
+                {formatByUnitType(val, ec.unitType)}
+              </dd>
+            </div>
+          );
+        })}
+        {showCommittedCapital && (
+          <div className="flex items-baseline justify-between gap-2 col-span-2 min-w-0 pt-1.5 border-t border-border/60">
+            <dt className="text-[11px] text-text-secondary uppercase tracking-[0.04em]">
+              Committed Capital
+            </dt>
+            <dd
+              className={`text-[13px] tabular-nums shrink-0 ${committedCapital === null ? "text-text-tertiary" : "text-text-primary"}`}
+            >
+              {formatCurrency(committedCapital)}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </li>
+  );
+}
+
+function MobileTotalsCard({
+  classes,
+  totals,
+  classesNeedingPercent,
+  showCommittedCapital,
+  committedCapitalTotal,
+}: {
+  classes: EquityClass[];
+  totals: Map<string, number>;
+  classesNeedingPercent: Set<string>;
+  showCommittedCapital: boolean;
+  committedCapitalTotal: number;
+}) {
+  return (
+    <div className="bg-surface px-4 py-3 border-t-2 border-trust-blue/30">
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <div className="font-semibold text-text-primary text-[14px]">Total</div>
+        {classesNeedingPercent.size > 0 && (
+          <div className="text-trust-blue font-semibold text-[14px] tabular-nums">
+            {formatPercent(100)}
+          </div>
+        )}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2">
+        {classes.map((ec) => (
+          <div key={ec.id} className="flex items-baseline justify-between gap-2 min-w-0">
+            <dt className="text-[11px] text-text-secondary uppercase tracking-[0.04em] truncate">
+              {ec.name}
+            </dt>
+            <dd className="text-[13px] font-semibold text-text-primary tabular-nums shrink-0">
+              {formatByUnitType(totals.get(ec.id) ?? 0, ec.unitType)}
+            </dd>
+          </div>
+        ))}
+        {showCommittedCapital && (
+          <div className="flex items-baseline justify-between gap-2 col-span-2 min-w-0 pt-1.5 border-t border-border/60">
+            <dt className="text-[11px] text-text-secondary uppercase tracking-[0.04em]">
+              Committed Capital
+            </dt>
+            <dd className="text-[13px] font-semibold text-text-primary tabular-nums shrink-0">
+              {formatCurrency(committedCapitalTotal)}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function getCommittedCapital(hwh: HolderWithHoldings): number | null {
+  return hwh.holdings.reduce<number | null>((max, h) => {
+    if (h.committedCapital !== null) {
+      return max !== null ? Math.max(max, h.committedCapital) : h.committedCapital;
+    }
+    return max;
+  }, null);
+}
+
+function computeHolderPercent(
+  hwh: HolderWithHoldings,
+  classes: EquityClass[],
+  classesNeedingPercent: Set<string>,
+  totals: Map<string, number>
+): number | null {
+  if (classesNeedingPercent.size === 0) return null;
+  for (const ec of classes) {
+    if (!classesNeedingPercent.has(ec.id)) continue;
+    const holding = hwh.holdings.find((h) => h.equityClassId === ec.id);
+    const val = holding?.amount ?? null;
+    const total = totals.get(ec.id) ?? 0;
+    if (val !== null && total > 0) {
+      return (val / total) * 100;
+    }
+  }
+  return null;
 }
